@@ -7,5 +7,5 @@ build/
 *.log
 coverage/
 .nyc_output/
-backend/prisma/migrations/
+# backend/prisma/migrations/
 uploads/
