@@ -1,0 +1,1072 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANT / ORGANIZATION ───────────────────────────────────────────────────
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  domain      String?
+  plan        PlanType @default(STARTER)
+  isActive    Boolean  @default(true)
+  timezone    String   @default("UTC")
+  currency    String   @default("USD")
+  whiteLabel  Boolean  @default(false)
+  brandColor  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users             User[]
+  whatsappAccounts  WhatsAppAccount[]
+  contacts          Contact[]
+  leads             Lead[]
+  deals             Deal[]
+  conversations     Conversation[]
+  broadcasts        Broadcast[]
+  campaigns         Campaign[]
+  templates         MessageTemplate[]
+  automations       Automation[]
+  pipelines         Pipeline[]
+  teams             Team[]
+  tags              Tag[]
+  customFields      CustomField[]
+  reports           Report[]
+  products          Product[]
+  tickets           Ticket[]
+  knowledgeBase     KnowledgeBase[]
+  auditLogs         AuditLog[]
+  webhooks          Webhook[]
+  integrations      Integration[]
+  billingSubscription BillingSubscription?
+  qrCodes           QRCode[]
+
+  @@map("organizations")
+}
+
+enum PlanType {
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ─── USERS & ROLES ────────────────────────────────────────────────────────────
+model User {
+  id               String    @id @default(uuid())
+  organizationId   String
+  teamId           String?
+  email            String
+  phone            String?
+  firstName        String
+  lastName         String
+  avatar           String?
+  role             UserRole  @default(AGENT)
+  isActive         Boolean   @default(true)
+  isEmailVerified  Boolean   @default(false)
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  lastLogin        DateTime?
+  timezone         String    @default("UTC")
+  language         String    @default("en")
+  notificationPref Json?
+  passwordHash     String?
+  googleId         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization      Organization        @relation(fields: [organizationId], references: [id])
+  team              Team?               @relation(fields: [teamId], references: [id])
+  sessions          UserSession[]
+  assignedLeads     Lead[]              @relation("LeadAssignee")
+  assignedDeals     Deal[]              @relation("DealAssignee")
+  assignedConversations Conversation[]  @relation("ConversationAgent")
+  messages          Message[]
+  activities        Activity[]
+  auditLogs         AuditLog[]          @relation("AuditUser")
+  assignedTickets   Ticket[]
+  notes             Note[]
+  gamificationPoints GamificationPoint[]
+  performanceMetrics AgentMetric[]
+
+  @@unique([organizationId, email])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  AGENT
+  VIEWER
+}
+
+model UserSession {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  refreshToken String? @unique
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  color          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  users        User[]
+  conversations Conversation[] @relation("ConversationTeam")
+
+  @@unique([organizationId, name])
+  @@map("teams")
+}
+
+// ─── WHATSAPP ACCOUNTS ───────────────────────────────────────────────────────
+model WhatsAppAccount {
+  id                    String              @id @default(uuid())
+  organizationId        String
+  name                  String
+  phoneNumber           String
+  phoneNumberId         String              @unique
+  businessAccountId     String
+  accessToken           String
+  webhookVerifyToken    String
+  apiType               WhatsAppApiType     @default(CLOUD)
+  status                AccountStatus       @default(PENDING)
+  isGreenTick           Boolean             @default(false)
+  displayName           String?
+  about                 String?
+  profilePicture        String?
+  qualityRating         String?
+  messagingLimit        String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  organization  Organization      @relation(fields: [organizationId], references: [id])
+  templates     MessageTemplate[]
+  conversations Conversation[]
+  broadcasts    Broadcast[]
+  qrCodes       QRCode[]
+
+  @@map("whatsapp_accounts")
+}
+
+enum WhatsAppApiType {
+  CLOUD
+  ON_PREMISE
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+// ─── MESSAGE TEMPLATES ───────────────────────────────────────────────────────
+model MessageTemplate {
+  id               String           @id @default(uuid())
+  organizationId   String
+  whatsappAccountId String
+  name             String
+  category         TemplateCategory
+  language         String           @default("en_US")
+  status           TemplateStatus   @default(PENDING)
+  header           Json?
+  body             String
+  footer           String?
+  buttons          Json?
+  variables        String[]
+  rejectionReason  String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization     Organization    @relation(fields: [organizationId], references: [id])
+  whatsappAccount  WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id])
+  broadcasts       Broadcast[]
+
+  @@map("message_templates")
+}
+
+enum TemplateCategory {
+  AUTHENTICATION
+  MARKETING
+  UTILITY
+}
+
+enum TemplateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAUSED
+}
+
+// ─── CONTACTS ─────────────────────────────────────────────────────────────────
+model Contact {
+  id              String        @id @default(uuid())
+  organizationId  String
+  firstName       String
+  lastName        String?
+  email           String?
+  phone           String
+  whatsappOptIn   Boolean       @default(true)
+  avatar          String?
+  company         String?
+  jobTitle        String?
+  website         String?
+  address         Json?
+  source          ContactSource @default(MANUAL)
+  language        String        @default("en")
+  timezone        String?
+  notes           String?
+  gdprConsent     Boolean       @default(false)
+  gdprConsentDate DateTime?
+  isBlocked       Boolean       @default(false)
+  mergedIntoId    String?
+  customFields    Json?
+  lastContactedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  groups        ContactGroup[] @relation("ContactToGroup")
+  leads         Lead[]
+  deals         Deal[]
+  conversations Conversation[]
+  tickets       Ticket[]
+  activities    Activity[]
+  notes_rel     Note[]
+  tags          Tag[]          @relation("ContactToTag")
+  orders        Order[]
+
+  @@unique([organizationId, phone])
+  @@map("contacts")
+}
+
+enum ContactSource {
+  MANUAL
+  WEB_FORM
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK_ADS
+  IMPORT
+  API
+  CHATBOT
+}
+
+model ContactGroup {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  color          String?
+  createdAt      DateTime @default(now())
+
+  contacts Contact[] @relation("ContactToGroup")
+
+  @@map("contact_groups")
+}
+
+// ─── LEADS ────────────────────────────────────────────────────────────────────
+model Lead {
+  id              String       @id @default(uuid())
+  organizationId  String
+  contactId       String?
+  assigneeId      String?
+  title           String
+  source          LeadSource   @default(MANUAL)
+  status          LeadStatus   @default(NEW)
+  score           Int          @default(0)
+  scoringModel    ScoringModel @default(BANT)
+  budget          Float?
+  authority       Int?
+  need            Int?
+  timeline        String?
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+  adId            String?
+  formId          String?
+  notes           String?
+  customFields    Json?
+  convertedAt     DateTime?
+  convertedDealId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contact      Contact?     @relation(fields: [contactId], references: [id])
+  assignee     User?        @relation("LeadAssignee", fields: [assigneeId], references: [id])
+  activities   Activity[]
+  tags         Tag[]        @relation("LeadToTag")
+  notes_rel    Note[]
+
+  @@map("leads")
+}
+
+enum LeadSource {
+  MANUAL
+  WEB_FORM
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK_ADS
+  CLICK_TO_WHATSAPP
+  IMPORT
+  API
+  REFERRAL
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum ScoringModel {
+  BANT
+  CHAMP
+  CUSTOM
+}
+
+// ─── PIPELINES & DEALS ────────────────────────────────────────────────────────
+model Pipeline {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  stages       PipelineStage[]
+
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id           String   @id @default(uuid())
+  pipelineId   String
+  name         String
+  order        Int
+  probability  Float    @default(50)
+  color        String?
+  rottenInDays Int?
+  createdAt    DateTime @default(now())
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id])
+  deals    Deal[]
+
+  @@map("pipeline_stages")
+}
+
+model Deal {
+  id               String      @id @default(uuid())
+  organizationId   String
+  contactId        String?
+  assigneeId       String?
+  stageId          String
+  title            String
+  value            Float       @default(0)
+  currency         String      @default("USD")
+  probability      Float       @default(50)
+  status           DealStatus  @default(OPEN)
+  expectedCloseDate DateTime?
+  closedAt         DateTime?
+  isRecurring      Boolean     @default(false)
+  recurringInterval String?
+  quotationUrl     String?
+  notes            String?
+  customFields     Json?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  assignee     User?         @relation("DealAssignee", fields: [assigneeId], references: [id])
+  stage        PipelineStage @relation(fields: [stageId], references: [id])
+  activities   Activity[]
+  tags         Tag[]         @relation("DealToTag")
+  notes_rel    Note[]
+
+  @@map("deals")
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+  ON_HOLD
+}
+
+// ─── CONVERSATIONS & MESSAGES ─────────────────────────────────────────────────
+model Conversation {
+  id                String             @id @default(uuid())
+  organizationId    String
+  whatsappAccountId String
+  contactId         String
+  agentId           String?
+  teamId            String?
+  status            ConversationStatus @default(OPEN)
+  channel           Channel            @default(WHATSAPP)
+  subject           String?
+  isBot             Boolean            @default(false)
+  botPaused         Boolean            @default(false)
+  priority          Priority           @default(NORMAL)
+  sentiment         String?
+  summary           String?
+  lastMessageAt     DateTime?
+  resolvedAt        DateTime?
+  firstResponseAt   DateTime?
+  waitingSince      DateTime?
+  customFields      Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+  whatsappAccount WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id])
+  contact         Contact         @relation(fields: [contactId], references: [id])
+  agent           User?           @relation("ConversationAgent", fields: [agentId], references: [id])
+  team            Team?           @relation("ConversationTeam", fields: [teamId], references: [id])
+  messages        Message[]
+  tags            Tag[]           @relation("ConversationToTag")
+  notes           Note[]
+  ticket          Ticket?
+
+  @@map("conversations")
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  SNOOZED
+  SPAM
+}
+
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  TELEGRAM
+  SMS
+  EMAIL
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  conversationId  String
+  senderId        String?
+  direction       Direction
+  type            MessageType   @default(TEXT)
+  status          MessageStatus @default(SENT)
+  content         String?
+  mediaUrl        String?
+  mediaType       String?
+  mediaSize       Int?
+  caption         String?
+  location        Json?
+  contacts        Json?
+  interactive     Json?
+  template        Json?
+  reaction        String?
+  replyToId       String?
+  waMessageId     String?
+  errorCode       String?
+  errorMessage    String?
+  isDeleted       Boolean       @default(false)
+  translatedText  String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User?        @relation(fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  STICKER
+  LOCATION
+  CONTACTS
+  INTERACTIVE
+  TEMPLATE
+  REACTION
+  VOICE
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// ─── BROADCASTS ───────────────────────────────────────────────────────────────
+model Broadcast {
+  id                String          @id @default(uuid())
+  organizationId    String
+  whatsappAccountId String
+  templateId        String?
+  name              String
+  status            BroadcastStatus @default(DRAFT)
+  scheduledAt       DateTime?
+  sentAt            DateTime?
+  completedAt       DateTime?
+  totalRecipients   Int             @default(0)
+  sentCount         Int             @default(0)
+  deliveredCount    Int             @default(0)
+  readCount         Int             @default(0)
+  failedCount       Int             @default(0)
+  optOutCount       Int             @default(0)
+  variables         Json?
+  segmentFilter     Json?
+  isABTest          Boolean         @default(false)
+  abVariants        Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+  whatsappAccount WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id])
+  template        MessageTemplate? @relation(fields: [templateId], references: [id])
+  recipients      BroadcastRecipient[]
+
+  @@map("broadcasts")
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+model BroadcastRecipient {
+  id          String        @id @default(uuid())
+  broadcastId String
+  contactId   String
+  status      MessageStatus @default(PENDING)
+  waMessageId String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  failedAt    DateTime?
+  errorCode   String?
+
+  broadcast Broadcast @relation(fields: [broadcastId], references: [id])
+
+  @@map("broadcast_recipients")
+}
+
+// ─── CAMPAIGNS (DRIP) ─────────────────────────────────────────────────────────
+model Campaign {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  status         CampaignStatus @default(DRAFT)
+  type           CampaignType   @default(DRIP)
+  triggerEvent   String?
+  triggerFilter  Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  steps        CampaignStep[]
+
+  @@map("campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum CampaignType {
+  DRIP
+  TRIGGER
+  BROADCAST
+}
+
+model CampaignStep {
+  id           String   @id @default(uuid())
+  campaignId   String
+  order        Int
+  delayMinutes Int      @default(0)
+  messageType  String
+  content      Json
+  createdAt    DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("campaign_steps")
+}
+
+// ─── AUTOMATION / CHATBOTS ────────────────────────────────────────────────────
+model Automation {
+  id             String           @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  type           AutomationType   @default(CHATBOT)
+  status         AutomationStatus @default(DRAFT)
+  trigger        Json
+  flow           Json
+  aiEnabled      Boolean          @default(false)
+  aiModel        String?
+  systemPrompt   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("automations")
+}
+
+enum AutomationType {
+  CHATBOT
+  WORKFLOW
+  ASSIGNMENT_RULE
+  AUTO_REPLY
+}
+
+enum AutomationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+// ─── TAGS ─────────────────────────────────────────────────────────────────────
+model Tag {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  color          String   @default("#6366f1")
+  createdAt      DateTime @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  contacts      Contact[]      @relation("ContactToTag")
+  leads         Lead[]         @relation("LeadToTag")
+  deals         Deal[]         @relation("DealToTag")
+  conversations Conversation[] @relation("ConversationToTag")
+
+  @@unique([organizationId, name])
+  @@map("tags")
+}
+
+// ─── CUSTOM FIELDS ────────────────────────────────────────────────────────────
+model CustomField {
+  id             String          @id @default(uuid())
+  organizationId String
+  entity         CustomFieldEntity
+  name           String
+  label          String
+  type           CustomFieldType
+  options        String[]
+  isRequired     Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("custom_fields")
+}
+
+enum CustomFieldEntity {
+  CONTACT
+  LEAD
+  DEAL
+  CONVERSATION
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+  URL
+  EMAIL
+  PHONE
+}
+
+// ─── NOTES & ACTIVITIES ───────────────────────────────────────────────────────
+model Note {
+  id             String   @id @default(uuid())
+  organizationId String?
+  authorId       String
+  contactId      String?
+  leadId         String?
+  dealId         String?
+  conversationId String?
+  content        String
+  isInternal     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  author       User          @relation(fields: [authorId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  lead         Lead?         @relation(fields: [leadId], references: [id])
+  deal         Deal?         @relation(fields: [dealId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+
+  @@map("notes")
+}
+
+model Activity {
+  id          String       @id @default(uuid())
+  userId      String?
+  contactId   String?
+  leadId      String?
+  dealId      String?
+  type        ActivityType
+  description String
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id])
+  contact Contact? @relation(fields: [contactId], references: [id])
+  lead    Lead?    @relation(fields: [leadId], references: [id])
+  deal    Deal?    @relation(fields: [dealId], references: [id])
+
+  @@map("activities")
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  TASK
+  WHATSAPP
+  STATUS_CHANGE
+  ASSIGNMENT
+  DEAL_CREATED
+  DEAL_WON
+  DEAL_LOST
+}
+
+// ─── REPORTS ──────────────────────────────────────────────────────────────────
+model Report {
+  id             String     @id @default(uuid())
+  organizationId String
+  name           String
+  type           ReportType
+  config         Json
+  isScheduled    Boolean    @default(false)
+  schedule       String?
+  lastRunAt      DateTime?
+  createdAt      DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("reports")
+}
+
+enum ReportType {
+  FUNNEL
+  AGENT_PERFORMANCE
+  CAMPAIGN_PERFORMANCE
+  LEAD_ANALYTICS
+  REVENUE
+  CONVERSATION
+  CUSTOM
+}
+
+// ─── PRODUCTS & COMMERCE ─────────────────────────────────────────────────────
+model Product {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  price          Float
+  currency       String   @default("USD")
+  imageUrl       String?
+  sku            String?
+  stock          Int?
+  isActive       Boolean  @default(true)
+  catalogId      String?
+  waProductId    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  orderItems   OrderItem[]
+
+  @@map("products")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  organizationId String?
+  contactId      String
+  status         OrderStatus @default(PENDING)
+  total          Float
+  currency       String      @default("USD")
+  paymentStatus  String      @default("UNPAID")
+  paymentLink    String?
+  paymentGateway String?
+  notes          String?
+  isAbandoned    Boolean     @default(false)
+  abandonedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  contact   Contact     @relation(fields: [contactId], references: [id])
+  items     OrderItem[]
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int    @default(1)
+  price     Float
+  discount  Float  @default(0)
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// ─── TICKETING ────────────────────────────────────────────────────────────────
+model Ticket {
+  id             String       @id @default(uuid())
+  organizationId String
+  contactId      String
+  conversationId String?      @unique
+  assigneeId     String?
+  subject        String
+  description    String?
+  status         TicketStatus @default(OPEN)
+  priority       Priority     @default(NORMAL)
+  slaDeadline    DateTime?
+  resolvedAt     DateTime?
+  csatScore      Int?
+  npsScore       Int?
+  tags           String[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  contact      Contact       @relation(fields: [contactId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  assignee     User?         @relation(fields: [assigneeId], references: [id])
+
+  @@map("tickets")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+// ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────────
+model KnowledgeBase {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  content        String
+  category       String?
+  tags           String[]
+  isPublished    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("knowledge_base")
+}
+
+// ─── INTEGRATIONS ─────────────────────────────────────────────────────────────
+model Integration {
+  id             String            @id @default(uuid())
+  organizationId String
+  type           IntegrationType
+  name           String
+  config         Json
+  isActive       Boolean           @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, type])
+  @@map("integrations")
+}
+
+enum IntegrationType {
+  HUBSPOT
+  SALESFORCE
+  ZOHO
+  SHOPIFY
+  WOOCOMMERCE
+  STRIPE
+  RAZORPAY
+  GOOGLE_CALENDAR
+  ZAPIER
+  CUSTOM_WEBHOOK
+}
+
+// ─── WEBHOOKS ─────────────────────────────────────────────────────────────────
+model Webhook {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  url            String
+  events         String[]
+  secret         String?
+  isActive       Boolean  @default(true)
+  lastTriggeredAt DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("webhooks")
+}
+
+// ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  entity         String
+  entityId       String?
+  oldValues      Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation("AuditUser", fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─── BILLING ─────────────────────────────────────────────────────────────────
+model BillingSubscription {
+  id               String   @id @default(uuid())
+  organizationId   String   @unique
+  plan             PlanType
+  stripeCustomerId String?
+  stripeSubId      String?
+  status           String   @default("active")
+  currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("billing_subscriptions")
+}
+
+// ─── GAMIFICATION ────────────────────────────────────────────────────────────
+model GamificationPoint {
+  id        String   @id @default(uuid())
+  userId    String
+  points    Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("gamification_points")
+}
+
+// ─── AGENT METRICS ────────────────────────────────────────────────────────────
+model AgentMetric {
+  id                    String   @id @default(uuid())
+  userId                String
+  date                  DateTime
+  conversationsHandled  Int      @default(0)
+  messagessSent         Int      @default(0)
+  avgResponseTimeSecs   Int      @default(0)
+  avgResolutionTimeSecs Int      @default(0)
+  csatAvg               Float?
+  leadsCreated          Int      @default(0)
+  dealsWon              Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@map("agent_metrics")
+}
+
+// ─── QR CODES ─────────────────────────────────────────────────────────────────
+model QRCode {
+  id                String   @id @default(uuid())
+  organizationId    String
+  whatsappAccountId String?
+  name              String
+  message           String?
+  imageUrl          String?
+  scanCount         Int      @default(0)
+  isActive          Boolean  @default(true)
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+  whatsappAccount WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id])
+
+  @@map("qr_codes")
+}
