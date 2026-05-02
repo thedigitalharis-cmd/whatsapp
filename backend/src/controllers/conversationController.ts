@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { sendWhatsAppMessage } from './whatsappController';
+import { logger } from '../utils/logger';
 
 export const getConversations = async (req: AuthRequest, res: Response) => {
   try {
@@ -148,12 +150,51 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
+    // Build WhatsApp API payload based on message type
+    let waPayload: any = { type };
+    if (type === 'TEXT' || type === 'text') {
+      waPayload = { type: 'text', text: { body: content || '' } };
+    } else if (type === 'IMAGE') {
+      waPayload = { type: 'image', image: { link: mediaUrl, ...(caption && { caption }) } };
+    } else if (type === 'DOCUMENT') {
+      waPayload = { type: 'document', document: { link: mediaUrl, filename: caption || 'file' } };
+    } else if (type === 'AUDIO') {
+      waPayload = { type: 'audio', audio: { link: mediaUrl } };
+    } else if (type === 'VIDEO') {
+      waPayload = { type: 'video', video: { link: mediaUrl, ...(caption && { caption }) } };
+    } else if (type === 'LOCATION') {
+      waPayload = { type: 'location', location: interactive };
+    } else if (type === 'INTERACTIVE') {
+      waPayload = { type: 'interactive', interactive };
+    } else if (type === 'TEMPLATE') {
+      waPayload = { type: 'template', template };
+    }
+
+    // Send via Meta API and capture the WhatsApp message ID
+    let waMessageId: string | undefined;
+    let sendStatus: 'SENT' | 'FAILED' = 'SENT';
+    let errorMessage: string | undefined;
+
+    try {
+      const waResult = await sendWhatsAppMessage(
+        conversation.whatsappAccount.phoneNumberId,
+        conversation.whatsappAccount.accessToken,
+        conversation.contact.phone,
+        waPayload
+      );
+      waMessageId = waResult?.messages?.[0]?.id;
+    } catch (err: any) {
+      logger.error('WhatsApp send error', { err: err.message });
+      sendStatus = 'FAILED';
+      errorMessage = err.message;
+    }
+
     const message = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         senderId: req.user!.id,
         direction: 'OUTBOUND',
-        type,
+        type: type as any,
         content,
         mediaUrl,
         mediaType,
@@ -161,7 +202,9 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         interactive,
         template,
         replyToId,
-        status: 'SENT',
+        status: sendStatus,
+        waMessageId,
+        errorMessage,
       },
       include: { sender: { select: { id: true, firstName: true, lastName: true } } },
     });
@@ -175,7 +218,10 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
     io?.to(`conv:${conversation.id}`).emit('message:new', message);
     io?.to(`org:${req.user!.organizationId}`).emit('conversation:updated', { id: conversation.id });
 
-    // TODO: Actually send via WhatsApp API
+    if (sendStatus === 'FAILED') {
+      return res.status(201).json({ ...message, warning: `Saved but WhatsApp send failed: ${errorMessage}` });
+    }
+
     res.status(201).json(message);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

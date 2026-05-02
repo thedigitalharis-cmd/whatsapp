@@ -17,7 +17,9 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    // Skip retry for auth endpoints themselves to avoid loops
+    const isAuthEndpoint = original?.url?.includes('/auth/');
+    if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
@@ -28,12 +30,17 @@ api.interceptors.response.use(
           original.headers.Authorization = `Bearer ${data.token}`;
           return api(original);
         } catch {
+          // Refresh failed — clear everything and redirect
           localStorage.removeItem('token');
           localStorage.removeItem('refreshToken');
-          window.location.href = '/login';
+          localStorage.removeItem('auth-store');
+          window.location.replace('/login');
         }
       } else {
-        window.location.href = '/login';
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('auth-store');
+        window.location.replace('/login');
       }
     }
     return Promise.reject(error);

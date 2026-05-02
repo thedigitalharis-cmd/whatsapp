@@ -7,6 +7,7 @@ import {
   LinkIcon, Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 import { orgApi, usersApi, teamsApi, whatsappApi, qrApi, tagsApi } from '../services/api';
+import WhatsAppSetupPage from './WhatsAppSetupPage';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -355,7 +356,7 @@ const SettingsPage: React.FC = () => {
         <Routes>
           <Route index element={<GeneralSettings />} />
           <Route path="users" element={<UsersSettings />} />
-          <Route path="whatsapp" element={<WhatsAppSettings />} />
+          <Route path="whatsapp" element={<WhatsAppSetupPage />} />
           <Route path="tags" element={<TagsSettings />} />
           <Route path="*" element={
             <div className="text-center py-20 text-gray-400">

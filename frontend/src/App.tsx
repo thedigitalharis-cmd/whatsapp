@@ -30,8 +30,16 @@ const queryClient = new QueryClient({
 });
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+  const { isAuthenticated, logout } = useAuthStore();
+  const token = localStorage.getItem('token');
+
+  // If Zustand says authenticated but token is gone, clear state
+  if (isAuthenticated && !token) {
+    logout();
+    return <Navigate to="/login" replace />;
+  }
+
+  return isAuthenticated && token ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
 function App() {

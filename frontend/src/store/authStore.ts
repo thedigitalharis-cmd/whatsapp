@@ -39,6 +39,24 @@ export const useAuthStore = create<AuthState>()(
         set({ user: null, token: null, isAuthenticated: false });
       },
     }),
-    { name: 'auth-store', partialize: (state) => ({ user: state.user, token: state.token, isAuthenticated: state.isAuthenticated }) }
+    {
+      name: 'auth-store',
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      // On rehydration, verify token still exists in localStorage
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          const token = localStorage.getItem('token');
+          if (!token) {
+            state.user = null;
+            state.token = null;
+            state.isAuthenticated = false;
+          }
+        }
+      },
+    }
   )
 );

@@ -8,10 +8,10 @@ import { logger } from '../utils/logger';
 
 const generateTokens = (userId: string) => {
   const token = jwt.sign({ userId }, process.env.JWT_SECRET as string, {
-    expiresIn: (process.env.JWT_EXPIRES_IN || '900') as any,
+    expiresIn: '15m',
   });
   const refreshToken = jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET as string, {
-    expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '604800') as any,
+    expiresIn: '7d',
   });
   return { token, refreshToken };
 };
