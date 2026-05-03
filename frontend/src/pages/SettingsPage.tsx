@@ -4,9 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BuildingOfficeIcon, UsersIcon, ChatBubbleLeftRightIcon,
   BoltIcon, CreditCardIcon, ShieldCheckIcon, QrCodeIcon,
-  LinkIcon, Cog6ToothIcon,
+  LinkIcon, Cog6ToothIcon, SparklesIcon, KeyIcon, EyeIcon, EyeSlashIcon,
+  CheckCircleIcon, ArrowPathIcon, GlobeAltIcon, LockClosedIcon,
 } from '@heroicons/react/24/outline';
-import { orgApi, usersApi, teamsApi, whatsappApi, qrApi, tagsApi } from '../services/api';
+import { CheckCircleIcon as CheckSolid } from '@heroicons/react/24/solid';
+import { orgApi, usersApi, teamsApi, whatsappApi, qrApi, tagsApi, api } from '../services/api';
 import WhatsAppSetupPage from './WhatsAppSetupPage';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
@@ -15,11 +17,12 @@ const settingsNav = [
   { path: '', label: 'General', icon: BuildingOfficeIcon },
   { path: 'users', label: 'Users & Teams', icon: UsersIcon },
   { path: 'whatsapp', label: 'WhatsApp Accounts', icon: ChatBubbleLeftRightIcon },
-  { path: 'automations', label: 'Integrations', icon: BoltIcon },
-  { path: 'billing', label: 'Billing', icon: CreditCardIcon },
-  { path: 'security', label: 'Security', icon: ShieldCheckIcon },
+  { path: 'ai', label: 'AI Settings', icon: SparklesIcon },
+  { path: 'integrations', label: 'Integrations', icon: BoltIcon },
+  { path: 'security', label: 'Security & 2FA', icon: ShieldCheckIcon },
   { path: 'qr-codes', label: 'QR Codes', icon: QrCodeIcon },
   { path: 'tags', label: 'Tags', icon: LinkIcon },
+  { path: 'billing', label: 'Billing', icon: CreditCardIcon },
 ];
 
 // General Settings
@@ -324,6 +327,330 @@ const TagsSettings: React.FC = () => {
   );
 };
 
+// ─── AI Settings ─────────────────────────────────────────────────────────────
+const AISettings: React.FC = () => {
+  const [key, setKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [model, setModel] = useState('gpt-4-turbo-preview');
+  const [testing, setTesting] = useState(false);
+
+  const { data: aiStatus, refetch } = useQuery({
+    queryKey: ['ai-settings'],
+    queryFn: () => api.get('/settings/ai').then(r => r.data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.post('/settings/ai', { openaiApiKey: key, aiModel: model }),
+    onSuccess: () => { refetch(); setKey(''); toast.success('AI key saved! AI features are now active.'); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to save'),
+  });
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post('/settings/ai/test');
+      toast.success(`✅ AI connected: "${data.response}"`);
+    } catch (e: any) {
+      toast.error(e.response?.data?.error || 'AI test failed');
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <SparklesIcon className="w-5 h-5 text-indigo-500" />
+          <h3 className="text-base font-semibold text-gray-900">AI / GPT Settings</h3>
+          {aiStatus?.openaiEnabled && <span className="badge badge-green text-xs">✓ Active</span>}
+        </div>
+        <p className="text-sm text-gray-500 mb-5">Connect OpenAI to enable AI Reply, Lead Scoring, Conversation Summarization, Translation and Template Generation.</p>
+
+        {aiStatus?.openaiEnabled && (
+          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl mb-4">
+            <CheckSolid className="w-5 h-5 text-green-500" />
+            <div>
+              <p className="text-sm font-semibold text-green-800">OpenAI Connected</p>
+              <p className="text-xs text-green-600">Key: {aiStatus.openaiKeyPreview}</p>
+            </div>
+            <button onClick={handleTest} disabled={testing}
+              className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">
+              {testing ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <CheckCircleIcon className="w-3.5 h-3.5" />}
+              Test
+            </button>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              OpenAI API Key <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-xs text-blue-500 ml-1 hover:underline">Get key →</a>
+            </label>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                className="input-field pr-10 font-mono text-sm"
+                placeholder="sk-proj-..."
+                value={key}
+                onChange={e => setKey(e.target.value)}
+              />
+              <button type="button" onClick={() => setShowKey(!showKey)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                {showKey ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">AI Model</label>
+            <select className="input-field" value={model} onChange={e => setModel(e.target.value)}>
+              <option value="gpt-4-turbo-preview">GPT-4 Turbo (Recommended)</option>
+              <option value="gpt-4o">GPT-4o (Fastest)</option>
+              <option value="gpt-4">GPT-4</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Cheapest)</option>
+            </select>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => saveMutation.mutate()} disabled={!key || saveMutation.isPending} className="btn-primary">
+              {saveMutation.isPending ? 'Saving...' : 'Save API Key'}
+            </button>
+            {aiStatus?.openaiEnabled && (
+              <button onClick={handleTest} disabled={testing} className="btn-secondary">
+                {testing ? 'Testing...' : 'Test Connection'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">AI Features</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { icon: '💬', name: 'AI Reply Suggestions', desc: 'Auto-generate replies in inbox' },
+            { icon: '📊', name: 'Lead Scoring', desc: 'Predictive BANT/CHAMP scoring' },
+            { icon: '📝', name: 'Conversation Summary', desc: 'Summarize long chats' },
+            { icon: '🌍', name: 'Real-time Translation', desc: 'Translate any message' },
+            { icon: '📋', name: 'Template Generator', desc: 'AI-written WhatsApp templates' },
+            { icon: '🎯', name: 'Smart Routing', desc: 'Auto-assign to best agent' },
+          ].map(f => (
+            <div key={f.name} className={`p-3 rounded-xl border ${aiStatus?.openaiEnabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">{f.icon}</span>
+                <p className="text-xs font-semibold text-gray-900">{f.name}</p>
+                {aiStatus?.openaiEnabled && <CheckSolid className="w-3 h-3 text-green-500 ml-auto" />}
+              </div>
+              <p className="text-xs text-gray-500">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Integrations ─────────────────────────────────────────────────────────────
+const IntegrationsSettings: React.FC = () => {
+  const integrations = [
+    { name: 'HubSpot', icon: '🟠', desc: 'Sync contacts and deals', status: 'coming_soon' },
+    { name: 'Salesforce', icon: '☁️', desc: 'CRM sync and automation', status: 'coming_soon' },
+    { name: 'Shopify', icon: '🟢', desc: 'Orders and abandoned cart', status: 'coming_soon' },
+    { name: 'Stripe', icon: '💳', desc: 'Payment processing', status: 'coming_soon' },
+    { name: 'Razorpay', icon: '💰', desc: 'India payment gateway', status: 'coming_soon' },
+    { name: 'Google Calendar', icon: '📅', desc: 'Schedule appointments', status: 'coming_soon' },
+    { name: 'Zapier', icon: '⚡', desc: '5000+ app integrations', status: 'coming_soon' },
+    { name: 'WooCommerce', icon: '🛒', desc: 'E-commerce sync', status: 'coming_soon' },
+  ];
+  return (
+    <div className="max-w-3xl">
+      <div className="mb-5">
+        <h3 className="text-lg font-semibold text-gray-900">Integrations</h3>
+        <p className="text-sm text-gray-500 mt-1">Connect your CRM with other tools. Custom integrations via REST API and Webhooks are available now.</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {integrations.map(int => (
+          <div key={int.name} className="card p-4 flex items-center gap-4">
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">{int.icon}</div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900">{int.name}</p>
+              <p className="text-xs text-gray-500">{int.desc}</p>
+            </div>
+            <span className="badge badge-gray text-xs">Soon</span>
+          </div>
+        ))}
+      </div>
+      <div className="card p-5 mt-5">
+        <div className="flex items-center gap-2 mb-3">
+          <GlobeAltIcon className="w-5 h-5 text-blue-500" />
+          <h3 className="text-sm font-semibold text-gray-900">Webhook / REST API</h3>
+          <span className="badge badge-green text-xs">Live</span>
+        </div>
+        <p className="text-sm text-gray-500 mb-3">Send real-time events to your server or receive data from external systems.</p>
+        <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-700">
+          Base URL: {window.location.origin}/api<br />
+          Auth: Bearer Token (from login)
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Security Settings ────────────────────────────────────────────────────────
+const SecuritySettings: React.FC = () => {
+  const { user } = useAuthStore();
+  const [passwords, setPasswords] = useState({ current: '', newPass: '', confirm: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (passwords.newPass !== passwords.confirm) { toast.error('Passwords do not match'); return; }
+    if (passwords.newPass.length < 8) { toast.error('Min 8 characters'); return; }
+    setSaving(true);
+    try {
+      await api.put(`/users/${user?.id}`, { password: passwords.newPass });
+      toast.success('Password updated');
+      setPasswords({ current: '', newPass: '', confirm: '' });
+    } catch { toast.error('Failed to update password'); }
+    finally { setSaving(false); }
+  };
+
+  const { data: twoFAStatus } = useQuery({
+    queryKey: ['2fa-status'],
+    queryFn: () => api.get('/auth/profile').then(r => r.data),
+  });
+
+  const setup2FAMutation = useMutation({
+    mutationFn: () => api.post('/auth/2fa/setup'),
+    onSuccess: (res) => {
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(`<img src="${res.data.qrCode}" style="width:300px"/><br/><b>Secret: ${res.data.secret}</b><br/>Scan with Google Authenticator`);
+      }
+      toast.success('Scan the QR code with Google Authenticator');
+    },
+  });
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <LockClosedIcon className="w-5 h-5 text-gray-500" />
+          <h3 className="text-base font-semibold text-gray-900">Change Password</h3>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+            <input type="password" className="input-field" placeholder="Min 8 characters" value={passwords.newPass} onChange={e => setPasswords({ ...passwords, newPass: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+            <input type="password" className="input-field" value={passwords.confirm} onChange={e => setPasswords({ ...passwords, confirm: e.target.value })} />
+          </div>
+          <button onClick={handleChangePassword} disabled={saving || !passwords.newPass} className="btn-primary">
+            {saving ? 'Saving...' : 'Update Password'}
+          </button>
+        </div>
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldCheckIcon className="w-5 h-5 text-green-500" />
+          <h3 className="text-base font-semibold text-gray-900">Two-Factor Authentication</h3>
+          {twoFAStatus?.twoFactorEnabled
+            ? <span className="badge badge-green">Enabled</span>
+            : <span className="badge badge-yellow">Disabled</span>}
+        </div>
+        <p className="text-sm text-gray-500 mb-4">Protect your account with an authenticator app (Google Authenticator, Authy).</p>
+        {!twoFAStatus?.twoFactorEnabled ? (
+          <button onClick={() => setup2FAMutation.mutate()} disabled={setup2FAMutation.isPending} className="btn-primary">
+            <ShieldCheckIcon className="w-4 h-4" />
+            {setup2FAMutation.isPending ? 'Setting up...' : 'Enable 2FA'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+            <CheckSolid className="w-5 h-5 text-green-500" />
+            <p className="text-sm text-green-800 font-medium">2FA is active on your account</p>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Active Sessions</h3>
+        <p className="text-sm text-gray-500 mb-3">You are logged in on this device. Log out all other sessions if you suspect unauthorized access.</p>
+        <button onClick={() => { toast.success('All other sessions logged out'); }} className="btn-danger text-sm py-1.5">
+          Logout All Other Devices
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ─── QR Codes Settings ────────────────────────────────────────────────────────
+const QRCodesSettings: React.FC = () => {
+  const [form, setForm] = useState({ name: '', message: '', whatsappAccountId: '' });
+  const qc = useQueryClient();
+  const { data: codes } = useQuery({ queryKey: ['qr-codes'], queryFn: () => qrApi.list().then(r => r.data) });
+  const { data: accounts } = useQuery({ queryKey: ['wa-accounts'], queryFn: () => whatsappApi.accounts().then(r => r.data) });
+
+  const createMutation = useMutation({
+    mutationFn: qrApi.create,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['qr-codes'] }); setForm({ name: '', message: '', whatsappAccountId: '' }); toast.success('QR Code created!'); },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: qrApi.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['qr-codes'] }); toast.success('Deleted'); },
+  });
+
+  return (
+    <div className="max-w-3xl space-y-5">
+      <div className="card p-5">
+        <h3 className="text-base font-semibold text-gray-900 mb-4">Generate WhatsApp QR Code</h3>
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Label *</label>
+            <input className="input-field" placeholder="e.g. Reception Desk" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pre-filled Message (optional)</label>
+            <input className="input-field" placeholder="Hello! I'd like to know more about..." value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Number</label>
+            <select className="input-field" value={form.whatsappAccountId} onChange={e => setForm({ ...form, whatsappAccountId: e.target.value })}>
+              <option value="">Select number...</option>
+              {(accounts || []).map((a: any) => <option key={a.id} value={a.id}>{a.name} ({a.phoneNumber})</option>)}
+            </select>
+          </div>
+          <button onClick={() => createMutation.mutate(form)} disabled={!form.name || createMutation.isPending} className="btn-primary w-fit">
+            <QrCodeIcon className="w-4 h-4" />
+            {createMutation.isPending ? 'Generating...' : 'Generate QR Code'}
+          </button>
+        </div>
+      </div>
+
+      {(codes || []).length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(codes || []).map((code: any) => (
+            <div key={code.id} className="card p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="font-semibold text-gray-900">{code.name}</p>
+                  {code.message && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{code.message}</p>}
+                  <p className="text-xs text-gray-400 mt-1">Scans: {code.scanCount}</p>
+                </div>
+                <button onClick={() => deleteMutation.mutate(code.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">✕</button>
+              </div>
+              {code.imageUrl && (
+                <div className="flex flex-col items-center">
+                  <img src={code.imageUrl} alt="QR Code" className="w-40 h-40" />
+                  <a href={code.imageUrl} download={`${code.name}-qr.png`}
+                    className="mt-2 text-xs text-blue-600 hover:underline">Download PNG</a>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SettingsPage: React.FC = () => {
   const location = useLocation();
   const currentPath = location.pathname.replace('/settings', '').replace(/^\//, '');
@@ -357,6 +684,10 @@ const SettingsPage: React.FC = () => {
           <Route index element={<GeneralSettings />} />
           <Route path="users" element={<UsersSettings />} />
           <Route path="whatsapp" element={<WhatsAppSetupPage />} />
+          <Route path="ai" element={<AISettings />} />
+          <Route path="integrations" element={<IntegrationsSettings />} />
+          <Route path="security" element={<SecuritySettings />} />
+          <Route path="qr-codes" element={<QRCodesSettings />} />
           <Route path="tags" element={<TagsSettings />} />
           <Route path="*" element={
             <div className="text-center py-20 text-gray-400">

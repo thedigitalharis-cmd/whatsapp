@@ -29,6 +29,32 @@ router.post('/:id/tags', async (req: AuthRequest, res: Response) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// Save / update contact info from conversation
+router.post('/:id/save-contact', async (req: AuthRequest, res: Response) => {
+  try {
+    const conv = await prisma.conversation.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+      include: { contact: true },
+    });
+    if (!conv) return res.status(404).json({ error: 'Not found' });
+
+    const { firstName, lastName, email, company, jobTitle, notes, gdprConsent } = req.body;
+    const contact = await prisma.contact.update({
+      where: { id: conv.contactId },
+      data: {
+        ...(firstName && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(email && { email }),
+        ...(company !== undefined && { company }),
+        ...(jobTitle !== undefined && { jobTitle }),
+        ...(notes !== undefined && { notes }),
+        ...(gdprConsent !== undefined && { gdprConsent, gdprConsentDate: gdprConsent ? new Date() : null }),
+      },
+    });
+    res.json(contact);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // Remove tag from conversation
 router.delete('/:id/tags/:tagId', async (req: AuthRequest, res: Response) => {
   try {

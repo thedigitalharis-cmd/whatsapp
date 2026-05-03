@@ -104,7 +104,10 @@ const InboxPage: React.FC = () => {
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | 'open' | 'pending' | 'resolved'>('all');
   const [filter, setFilter] = useState({ status: '', channel: '' });
+  const [showSaveContact, setShowSaveContact] = useState(false);
+  const [contactForm, setContactForm] = useState({ firstName: '', lastName: '', email: '', company: '', jobTitle: '', gdprConsent: false });
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showAI, setShowAI] = useState(false);
@@ -122,10 +125,12 @@ const InboxPage: React.FC = () => {
   const qc = useQueryClient();
 
   // ── Data queries ─────────────────────────────────────────────────────────
+  const tabStatusMap: Record<string, string> = { all: '', open: 'OPEN', pending: 'PENDING', resolved: 'RESOLVED' };
+
   const { data: conversations } = useQuery({
-    queryKey: ['conversations', search, filter],
-    queryFn: () => conversationsApi.list({ search, ...filter, limit: 100 }).then(r => r.data.data),
-    refetchInterval: 8000,
+    queryKey: ['conversations', search, filter, activeTab],
+    queryFn: () => conversationsApi.list({ search, ...filter, status: tabStatusMap[activeTab], limit: 200 }).then(r => r.data.data),
+    refetchInterval: 5000,
   });
 
   const { data: selectedConv, refetch: refetchConv } = useQuery({
@@ -168,6 +173,12 @@ const InboxPage: React.FC = () => {
       ? api.post(`/conversations/${selectedConvId}/tags`, { tagId })
       : api.delete(`/conversations/${selectedConvId}/tags/${tagId}`),
     onSuccess: () => { refetchConv(); qc.invalidateQueries({ queryKey: ['conversations'] }); },
+  });
+
+  const saveContactMutation = useMutation({
+    mutationFn: (data: any) => api.post(`/conversations/${selectedConvId}/save-contact`, data),
+    onSuccess: () => { refetchConv(); setShowSaveContact(false); toast.success('Contact saved!'); qc.invalidateQueries({ queryKey: ['contacts'] }); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to save contact'),
   });
 
   // ── Socket ────────────────────────────────────────────────────────────────
@@ -272,29 +283,39 @@ const InboxPage: React.FC = () => {
       {/* ── Conversation List ─────────────────────────────────────────── */}
       <div className="w-72 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
         <div className="p-3 border-b border-gray-200">
-          <h2 className="text-base font-bold text-gray-900 mb-2">Inbox
+          <h2 className="text-base font-bold text-gray-900 mb-2">
+            Inbox
             <span className="ml-2 text-xs bg-whatsapp-green text-white rounded-full px-1.5 py-0.5">
               {(conversations || []).filter((c: any) => c.status === 'OPEN').length}
             </span>
           </h2>
+
+          {/* Tabs */}
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5 mb-2">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'open', label: 'Open' },
+              { key: 'pending', label: 'Pending' },
+              { key: 'resolved', label: 'Done' },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+                className={`flex-1 text-xs py-1 rounded-md font-medium transition-colors ${activeTab === tab.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           <div className="relative mb-2">
             <MagnifyingGlassIcon className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
             <input type="text" placeholder="Search..." className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-whatsapp-green"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <div className="flex gap-1.5">
-            <select className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white" value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}>
-              <option value="">All</option>
-              <option value="OPEN">Open</option>
-              <option value="PENDING">Pending</option>
-              <option value="RESOLVED">Resolved</option>
-            </select>
-            <select className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white" value={filter.channel} onChange={e => setFilter({ ...filter, channel: e.target.value })}>
-              <option value="">All Channels</option>
-              <option value="WHATSAPP">WhatsApp</option>
-              <option value="INSTAGRAM">Instagram</option>
-            </select>
-          </div>
+          <select className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white" value={filter.channel} onChange={e => setFilter({ ...filter, channel: e.target.value })}>
+            <option value="">All Channels</option>
+            <option value="WHATSAPP">📱 WhatsApp</option>
+            <option value="INSTAGRAM">📸 Instagram</option>
+            <option value="EMAIL">📧 Email</option>
+          </select>
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
@@ -614,6 +635,52 @@ const InboxPage: React.FC = () => {
           {/* ── Customer Details Sidebar ──────────────────────────────── */}
           {showDetails && (
             <div className="w-72 flex-shrink-0 border-l border-gray-200 bg-white overflow-y-auto">
+              {/* Save Contact Modal */}
+              {showSaveContact && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+                    <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                      <h2 className="text-base font-semibold">Save / Update Contact</h2>
+                      <button onClick={() => setShowSaveContact(false)} className="text-gray-400">✕</button>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">First Name</label>
+                          <input className="input-field text-sm" value={contactForm.firstName} onChange={e => setContactForm({ ...contactForm, firstName: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Last Name</label>
+                          <input className="input-field text-sm" value={contactForm.lastName} onChange={e => setContactForm({ ...contactForm, lastName: e.target.value })} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" className="input-field text-sm" placeholder="email@example.com" value={contactForm.email} onChange={e => setContactForm({ ...contactForm, email: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Company</label>
+                        <input className="input-field text-sm" value={contactForm.company} onChange={e => setContactForm({ ...contactForm, company: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Job Title</label>
+                        <input className="input-field text-sm" value={contactForm.jobTitle} onChange={e => setContactForm({ ...contactForm, jobTitle: e.target.value })} />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={contactForm.gdprConsent} onChange={e => setContactForm({ ...contactForm, gdprConsent: e.target.checked })} className="rounded" />
+                        <span className="text-xs text-gray-700">GDPR Consent obtained</span>
+                      </label>
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={() => setShowSaveContact(false)} className="btn-secondary flex-1">Cancel</button>
+                        <button onClick={() => saveContactMutation.mutate(contactForm)} disabled={saveContactMutation.isPending} className="btn-primary flex-1">
+                          {saveContactMutation.isPending ? 'Saving...' : 'Save Contact'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Contact info */}
               <div className="p-4 border-b border-gray-100">
                 <div className="text-center mb-3">
@@ -646,15 +713,22 @@ const InboxPage: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex gap-2 mt-3">
+                <div className="grid grid-cols-3 gap-1.5 mt-3">
                   <a href={`tel:${contact?.phone}`}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-whatsapp-teal bg-whatsapp-green/10 rounded-lg hover:bg-whatsapp-green/20">
+                    className="flex items-center justify-center gap-1 py-1.5 text-xs text-whatsapp-teal bg-whatsapp-green/10 rounded-lg hover:bg-whatsapp-green/20">
                     <PhoneIcon className="w-3 h-3" /> Call
                   </a>
                   <a href={`https://wa.me/${contact?.phone?.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-whatsapp-teal bg-whatsapp-green/10 rounded-lg hover:bg-whatsapp-green/20">
-                    <ChatBubbleLeftRightIcon className="w-3 h-3" /> WhatsApp
+                    className="flex items-center justify-center gap-1 py-1.5 text-xs text-whatsapp-teal bg-whatsapp-green/10 rounded-lg hover:bg-whatsapp-green/20">
+                    <ChatBubbleLeftRightIcon className="w-3 h-3" /> WA
                   </a>
+                  <button onClick={() => {
+                    setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: contact?.jobTitle || '', gdprConsent: contact?.gdprConsent || false });
+                    setShowSaveContact(true);
+                  }}
+                    className="flex items-center justify-center gap-1 py-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100">
+                    ✏️ Edit
+                  </button>
                 </div>
               </div>
 
@@ -759,6 +833,13 @@ const InboxPage: React.FC = () => {
                   <button onClick={handleAIReply}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100">
                     <SparklesIcon className="w-3.5 h-3.5" /> AI Reply Suggestion
+                  </button>
+                  <button onClick={() => {
+                    setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: contact?.jobTitle || '', gdprConsent: contact?.gdprConsent || false });
+                    setShowSaveContact(true);
+                  }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100">
+                    <UserPlusIcon className="w-3.5 h-3.5" /> Save / Update Contact
                   </button>
                 </div>
               </div>

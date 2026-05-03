@@ -41,6 +41,7 @@ import qrCodeRoutes from './routes/qrCodes';
 import billingRoutes from './routes/billing';
 import teamRoutes from './routes/teams';
 import auditRoutes from './routes/audit';
+import settingsRoutes from './routes/settings';
 
 const app = express();
 const httpServer = createServer(app);
@@ -123,6 +124,7 @@ app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/qr-codes', authMiddleware, qrCodeRoutes);
 app.use('/api/billing', authMiddleware, billingRoutes);
 app.use('/api/audit', authMiddleware, auditRoutes);
+app.use('/api/settings', authMiddleware, settingsRoutes);
 
 // Socket.IO
 io.use((socket, next) => {
