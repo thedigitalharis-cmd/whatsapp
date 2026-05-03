@@ -6,7 +6,7 @@ import {
   TicketIcon, ShoppingBagIcon, Cog6ToothIcon, DocumentTextIcon,
   BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, BellIcon,
   MagnifyingGlassIcon, ArrowRightOnRectangleIcon, Squares2X2Icon,
-  QueueListIcon,
+  QueueListIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftRightIcon as ChatSolid } from '@heroicons/react/24/solid';
 import { useAuthStore } from '../store/authStore';
@@ -27,6 +27,7 @@ const navItems = [
   { path: '/analytics', label: 'Analytics', icon: ChartBarIcon },
   { path: '/tickets', label: 'Tickets', icon: TicketIcon },
   { path: '/products', label: 'Products', icon: ShoppingBagIcon },
+  { path: '/follow-ups', label: 'Follow-ups', icon: ClockIcon },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: BookOpenIcon },
   { path: '/settings', label: 'Settings', icon: Cog6ToothIcon },
 ];

@@ -46,6 +46,7 @@ model Organization {
   integrations      Integration[]
   billingSubscription BillingSubscription?
   qrCodes           QRCode[]
+  followUps         FollowUp[]
 
   @@map("organizations")
 }
@@ -94,6 +95,7 @@ model User {
   notes             Note[]
   gamificationPoints GamificationPoint[]
   performanceMetrics AgentMetric[]
+  followUps          FollowUp[]
 
   @@unique([organizationId, email])
   @@map("users")
@@ -256,6 +258,7 @@ model Contact {
   notes_rel     Note[]
   tags          Tag[]          @relation("ContactToTag")
   orders        Order[]
+  followUps     FollowUp[]
 
   @@unique([organizationId, phone])
   @@map("contacts")
@@ -453,6 +456,7 @@ model Conversation {
   tags            Tag[]           @relation("ConversationToTag")
   notes           Note[]
   ticket          Ticket?
+  followUps       FollowUp[]
 
   @@map("conversations")
 }
@@ -1050,6 +1054,47 @@ model AgentMetric {
 
   @@unique([userId, date])
   @@map("agent_metrics")
+}
+
+// ─── FOLLOW-UPS ───────────────────────────────────────────────────────────────
+model FollowUp {
+  id              String         @id @default(uuid())
+  organizationId  String
+  contactId       String?
+  conversationId  String?
+  createdById     String
+  title           String
+  message         String
+  scheduledAt     DateTime
+  status          FollowUpStatus @default(PENDING)
+  type            FollowUpType   @default(MANUAL)
+  sentAt          DateTime?
+  waMessageId     String?
+  errorMessage    String?
+  recurringDays   Int?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  createdBy    User          @relation(fields: [createdById], references: [id])
+
+  @@map("follow_ups")
+}
+
+enum FollowUpStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum FollowUpType {
+  MANUAL
+  AUTO
+  RECURRING
 }
 
 // ─── QR CODES ─────────────────────────────────────────────────────────────────

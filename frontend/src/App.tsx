@@ -22,6 +22,7 @@ import ProductsPage from './pages/ProductsPage';
 import SettingsPage from './pages/SettingsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
+import FollowUpsPage from './pages/FollowUpsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,6 +88,7 @@ function App() {
                     <Route path="products" element={<ProductsPage />} />
                     <Route path="templates" element={<TemplatesPage />} />
                     <Route path="knowledge-base" element={<KnowledgeBasePage />} />
+                    <Route path="follow-ups" element={<FollowUpsPage />} />
                     <Route path="settings/*" element={<SettingsPage />} />
                   </Routes>
                 </Layout>

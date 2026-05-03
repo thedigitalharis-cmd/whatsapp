@@ -448,44 +448,194 @@ const AISettings: React.FC = () => {
 
 // ─── Integrations ─────────────────────────────────────────────────────────────
 const IntegrationsSettings: React.FC = () => {
-  const integrations = [
-    { name: 'HubSpot', icon: '🟠', desc: 'Sync contacts and deals', status: 'coming_soon' },
-    { name: 'Salesforce', icon: '☁️', desc: 'CRM sync and automation', status: 'coming_soon' },
-    { name: 'Shopify', icon: '🟢', desc: 'Orders and abandoned cart', status: 'coming_soon' },
-    { name: 'Stripe', icon: '💳', desc: 'Payment processing', status: 'coming_soon' },
-    { name: 'Razorpay', icon: '💰', desc: 'India payment gateway', status: 'coming_soon' },
-    { name: 'Google Calendar', icon: '📅', desc: 'Schedule appointments', status: 'coming_soon' },
-    { name: 'Zapier', icon: '⚡', desc: '5000+ app integrations', status: 'coming_soon' },
-    { name: 'WooCommerce', icon: '🛒', desc: 'E-commerce sync', status: 'coming_soon' },
-  ];
+  const [stripeKey, setStripeKey] = useState('');
+  const [zapierUrl, setZapierUrl] = useState('');
+  const [zapierEvents, setZapierEvents] = useState(['*']);
+  const [googleToken, setGoogleToken] = useState('');
+  const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const { data: status, refetch: refetchStatus } = useQuery({
+    queryKey: ['integration-status'],
+    queryFn: () => api.get('/integrations-extended/status').then(r => r.data),
+  });
+
+  const handleStripe = async () => {
+    setSaving('stripe');
+    try {
+      await api.post('/integrations-extended/stripe/configure', { secretKey: stripeKey });
+      toast.success('✅ Stripe connected!');
+      setStripeKey('');
+      refetchStatus();
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Failed'); }
+    setSaving(null);
+  };
+
+  const handleZapier = async () => {
+    setSaving('zapier');
+    try {
+      await api.post('/integrations-extended/zapier/configure', { webhookUrl: zapierUrl, events: zapierEvents });
+      toast.success('✅ Zapier connected and tested!');
+      setZapierUrl('');
+      refetchStatus();
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Failed'); }
+    setSaving(null);
+  };
+
+  const handleExportContacts = async () => {
+    setSaving('sheets');
+    try {
+      const { data } = await api.post('/integrations-extended/google/sheets/export-contacts', { accessToken: googleToken, spreadsheetId: spreadsheetId || undefined });
+      toast.success(`✅ Exported ${data.exported} contacts!`);
+      window.open(data.url, '_blank');
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Failed — check your Google token'); }
+    setSaving(null);
+  };
+
   return (
-    <div className="max-w-3xl">
-      <div className="mb-5">
+    <div className="max-w-3xl space-y-5">
+      <div>
         <h3 className="text-lg font-semibold text-gray-900">Integrations</h3>
-        <p className="text-sm text-gray-500 mt-1">Connect your CRM with other tools. Custom integrations via REST API and Webhooks are available now.</p>
+        <p className="text-sm text-gray-500 mt-1">Connect Stripe, Zapier, Google Sheets and Calendar.</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {integrations.map(int => (
-          <div key={int.name} className="card p-4 flex items-center gap-4">
-            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">{int.icon}</div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-900">{int.name}</p>
-              <p className="text-xs text-gray-500">{int.desc}</p>
+
+      {/* Stripe */}
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-2xl">💳</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">Stripe</h3>
+              {status?.stripe && <span className="badge badge-green text-xs">✓ Connected</span>}
             </div>
-            <span className="badge badge-gray text-xs">Soon</span>
+            <p className="text-xs text-gray-500">Create payment links and send invoices directly from chats</p>
           </div>
-        ))}
+        </div>
+        {!status?.stripe ? (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Stripe Secret Key <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="text-blue-500 ml-1 hover:underline text-xs">Get key →</a>
+              </label>
+              <input type="password" className="input-field text-sm font-mono" placeholder="sk_live_... or sk_test_..."
+                value={stripeKey} onChange={e => setStripeKey(e.target.value)} />
+            </div>
+            <button onClick={handleStripe} disabled={!stripeKey || saving === 'stripe'} className="btn-primary text-sm">
+              {saving === 'stripe' ? 'Connecting...' : 'Connect Stripe'}
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
+            <p className="text-sm text-green-800 font-medium">✅ Stripe is connected</p>
+            <p className="text-xs text-green-600 mt-0.5">Payment links and invoices are available in the Inbox</p>
+          </div>
+        )}
       </div>
-      <div className="card p-5 mt-5">
+
+      {/* Zapier */}
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-2xl">⚡</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">Zapier</h3>
+              {status?.zapier && <span className="badge badge-green text-xs">✓ Connected</span>}
+            </div>
+            <p className="text-xs text-gray-500">Send CRM events to 5000+ apps. Create a "Catch Hook" Zap to get your URL.</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Zapier Webhook URL <a href="https://zapier.com/apps/webhook/integrations" target="_blank" rel="noreferrer" className="text-blue-500 ml-1 hover:underline text-xs">Create Zap →</a>
+            </label>
+            <input className="input-field text-sm" placeholder="https://hooks.zapier.com/hooks/catch/..."
+              value={zapierUrl} onChange={e => setZapierUrl(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Trigger Events</label>
+            <div className="flex flex-wrap gap-2">
+              {['contact.created', 'lead.created', 'deal.won', 'message.received', 'followup.sent'].map(ev => (
+                <label key={ev} className="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" checked={zapierEvents.includes('*') || zapierEvents.includes(ev)}
+                    onChange={e => {
+                      if (zapierEvents.includes('*')) { setZapierEvents([ev]); return; }
+                      setZapierEvents(e.target.checked ? [...zapierEvents, ev] : zapierEvents.filter(z => z !== ev));
+                    }} className="rounded" />
+                  <span className="text-xs text-gray-700">{ev}</span>
+                </label>
+              ))}
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={zapierEvents.includes('*')} onChange={e => setZapierEvents(e.target.checked ? ['*'] : [])} className="rounded" />
+                <span className="text-xs font-medium text-gray-700">All events</span>
+              </label>
+            </div>
+          </div>
+          <button onClick={handleZapier} disabled={!zapierUrl || saving === 'zapier'} className="btn-primary text-sm">
+            {saving === 'zapier' ? 'Connecting...' : status?.zapier ? 'Update Zapier' : 'Connect Zapier'}
+          </button>
+          {status?.zapierUrl && (
+            <p className="text-xs text-gray-500">Current: <span className="font-mono">{status.zapierUrl.slice(0, 50)}...</span></p>
+          )}
+        </div>
+      </div>
+
+      {/* Google Sheets */}
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-2xl">📊</span>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Google Sheets</h3>
+            <p className="text-xs text-gray-500">Export contacts to Google Sheets. Get access token from Google OAuth Playground.</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Google Access Token <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noreferrer" className="text-blue-500 ml-1 hover:underline text-xs">Get token →</a>
+            </label>
+            <input type="password" className="input-field text-sm font-mono" placeholder="ya29...."
+              value={googleToken} onChange={e => setGoogleToken(e.target.value)} />
+            <p className="text-xs text-gray-400 mt-1">Use OAuth Playground → scope: spreadsheets + calendar</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Spreadsheet ID (optional — leave blank to create new)</label>
+            <input className="input-field text-sm font-mono" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+              value={spreadsheetId} onChange={e => setSpreadsheetId(e.target.value)} />
+          </div>
+          <button onClick={handleExportContacts} disabled={!googleToken || saving === 'sheets'} className="btn-primary text-sm">
+            {saving === 'sheets' ? 'Exporting...' : '📤 Export All Contacts to Sheet'}
+          </button>
+        </div>
+      </div>
+
+      {/* Google Calendar */}
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-2xl">📅</span>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Google Calendar</h3>
+            <p className="text-xs text-gray-500">Create calendar events and appointments from the CRM. Use the same access token as Google Sheets.</p>
+          </div>
+        </div>
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+          <p className="text-sm text-blue-800 font-medium">📅 Available in conversation sidebar</p>
+          <p className="text-xs text-blue-600 mt-0.5">Once you add a Google token above, you can create calendar events directly from any conversation</p>
+        </div>
+      </div>
+
+      {/* REST API */}
+      <div className="card p-5">
         <div className="flex items-center gap-2 mb-3">
           <GlobeAltIcon className="w-5 h-5 text-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Webhook / REST API</h3>
+          <h3 className="text-sm font-semibold text-gray-900">REST API</h3>
           <span className="badge badge-green text-xs">Live</span>
         </div>
-        <p className="text-sm text-gray-500 mb-3">Send real-time events to your server or receive data from external systems.</p>
-        <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-700">
-          Base URL: {window.location.origin}/api<br />
-          Auth: Bearer Token (from login)
+        <p className="text-sm text-gray-500 mb-3">Build custom integrations with the full REST API.</p>
+        <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-700 space-y-1">
+          <p>Base URL: <span className="text-blue-600">{window.location.origin}/api</span></p>
+          <p>Auth: <span className="text-green-600">Authorization: Bearer &lt;token&gt;</span></p>
+          <p>Docs: /api/health (health check)</p>
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import {
   PhoneIcon, EnvelopeIcon, BuildingOfficeIcon, ChevronRightIcon,
   CurrencyDollarIcon, DocumentTextIcon, ArrowPathIcon,
   CheckCircleIcon, ClockIcon, ChatBubbleLeftRightIcon,
-  BoltIcon, ArrowRightIcon, InformationCircleIcon,
+  BoltIcon, ArrowRightIcon, InformationCircleIcon, BellIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckSolid, XCircleIcon } from '@heroicons/react/24/solid';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
@@ -107,6 +107,8 @@ const InboxPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'open' | 'pending' | 'resolved'>('all');
   const [filter, setFilter] = useState({ status: '', channel: '' });
   const [showSaveContact, setShowSaveContact] = useState(false);
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpForm, setFollowUpForm] = useState({ title: '', message: '', scheduledAt: '', type: 'MANUAL', recurringDays: '' });
   const [contactForm, setContactForm] = useState({ firstName: '', lastName: '', email: '', company: '', jobTitle: '', gdprConsent: false });
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -179,6 +181,12 @@ const InboxPage: React.FC = () => {
     mutationFn: (data: any) => api.post(`/conversations/${selectedConvId}/save-contact`, data),
     onSuccess: () => { refetchConv(); setShowSaveContact(false); toast.success('Contact saved!'); qc.invalidateQueries({ queryKey: ['contacts'] }); },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to save contact'),
+  });
+
+  const followUpMutation = useMutation({
+    mutationFn: (data: any) => api.post('/follow-ups', data),
+    onSuccess: () => { setShowFollowUp(false); setFollowUpForm({ title: '', message: '', scheduledAt: '', type: 'MANUAL', recurringDays: '' }); toast.success('✅ Follow-up scheduled! Message will send automatically.'); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   // ── Socket ────────────────────────────────────────────────────────────────
@@ -462,6 +470,12 @@ const InboxPage: React.FC = () => {
                   <CurrencyDollarIcon className="w-3.5 h-3.5" /> Payment
                 </button>
 
+                {/* Follow-up */}
+                <button onClick={() => setShowFollowUp(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-orange-700 bg-orange-50 rounded-lg hover:bg-orange-100">
+                  <BellIcon className="w-3.5 h-3.5" /> Follow-up
+                </button>
+
                 {/* Toggle customer details */}
                 <button onClick={() => setShowDetails(!showDetails)}
                   className={`p-1.5 rounded-lg text-xs ${showDetails ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
@@ -635,6 +649,68 @@ const InboxPage: React.FC = () => {
           {/* ── Customer Details Sidebar ──────────────────────────────── */}
           {showDetails && (
             <div className="w-72 flex-shrink-0 border-l border-gray-200 bg-white overflow-y-auto">
+              {/* Follow-up Modal */}
+              {showFollowUp && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+                    <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BellIcon className="w-5 h-5 text-orange-500" />
+                        <h2 className="text-base font-semibold">Schedule Follow-up</h2>
+                      </div>
+                      <button onClick={() => setShowFollowUp(false)} className="text-gray-400">✕</button>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Label (optional)</label>
+                        <input className="input-field text-sm" placeholder="e.g. Check if interested"
+                          value={followUpForm.title} onChange={e => setFollowUpForm({ ...followUpForm, title: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Message to Send *</label>
+                        <textarea className="input-field text-sm" rows={4}
+                          placeholder="Hi! Just following up on our conversation. Are you ready to proceed?"
+                          value={followUpForm.message} onChange={e => setFollowUpForm({ ...followUpForm, message: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Send Date & Time *</label>
+                        <input type="datetime-local" className="input-field text-sm"
+                          value={followUpForm.scheduledAt} onChange={e => setFollowUpForm({ ...followUpForm, scheduledAt: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                        <select className="input-field text-sm" value={followUpForm.type} onChange={e => setFollowUpForm({ ...followUpForm, type: e.target.value })}>
+                          <option value="MANUAL">One-time</option>
+                          <option value="RECURRING">Recurring</option>
+                        </select>
+                      </div>
+                      {followUpForm.type === 'RECURRING' && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Repeat every (days)</label>
+                          <input type="number" min="1" className="input-field text-sm" placeholder="7"
+                            value={followUpForm.recurringDays} onChange={e => setFollowUpForm({ ...followUpForm, recurringDays: e.target.value })} />
+                        </div>
+                      )}
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={() => setShowFollowUp(false)} className="btn-secondary flex-1">Cancel</button>
+                        <button
+                          onClick={() => followUpMutation.mutate({
+                            ...followUpForm,
+                            conversationId: selectedConvId,
+                            contactId: contact?.id,
+                            recurringDays: followUpForm.recurringDays ? Number(followUpForm.recurringDays) : undefined,
+                          })}
+                          disabled={!followUpForm.message || !followUpForm.scheduledAt || followUpMutation.isPending}
+                          className="btn-primary flex-1"
+                        >
+                          {followUpMutation.isPending ? 'Scheduling...' : '📅 Schedule'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Save Contact Modal */}
               {showSaveContact && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -833,6 +909,10 @@ const InboxPage: React.FC = () => {
                   <button onClick={handleAIReply}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100">
                     <SparklesIcon className="w-3.5 h-3.5" /> AI Reply Suggestion
+                  </button>
+                  <button onClick={() => setShowFollowUp(true)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100">
+                    <BellIcon className="w-3.5 h-3.5" /> Schedule Follow-up
                   </button>
                   <button onClick={() => {
                     setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: contact?.jobTitle || '', gdprConsent: contact?.gdprConsent || false });
