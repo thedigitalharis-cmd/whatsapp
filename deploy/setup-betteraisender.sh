@@ -105,6 +105,7 @@ DOCKER_REGISTRY=ghcr.io
 DOCKER_IMAGE_BACKEND=thedigitalharis-cmd/whatsapp-crm-backend
 DOCKER_IMAGE_FRONTEND=thedigitalharis-cmd/whatsapp-crm-frontend
 IMAGE_TAG=latest
+NODE_ENV=production
 EOF
   ok "Generated .env.production"
 else
@@ -117,14 +118,14 @@ cp "$APP_DIR/deploy/nginx.staging.conf" "$APP_DIR/deploy/nginx.active.conf"
 # ─── Start services (HTTP only) ──────────────────────────────────────────────
 info "Starting services..."
 cd "$APP_DIR"
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d postgres redis backend frontend nginx certbot
+docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" up -d --build postgres redis && sleep 20 && docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" up -d --build backend && sleep 90 && docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" up -d --build frontend nginx certbot
 
 info "Waiting 40s for backend to be ready..."
 sleep 40
 
 # ─── Issue SSL certificate ───────────────────────────────────────────────────
 info "Requesting SSL certificate for $DOMAIN and $WWW_DOMAIN..."
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" \
+docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" \
   run --rm certbot certbot certonly \
   --webroot -w /var/www/certbot \
   -d "$DOMAIN" -d "$WWW_DOMAIN" \
@@ -135,7 +136,7 @@ docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" \
 if [ "$SSL_OK" = true ]; then
   info "SSL issued! Switching to HTTPS nginx config..."
   cp "$APP_DIR/deploy/nginx.betteraisender.conf" "$APP_DIR/deploy/nginx.active.conf"
-  docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" restart nginx
+  docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" restart nginx
   ok "HTTPS enabled at https://$DOMAIN"
 else
   warn "SSL failed — check DNS is pointing to this server. Run: bash $APP_DIR/deploy/renew-ssl.sh"
@@ -143,7 +144,7 @@ fi
 
 # ─── Run DB migrations ───────────────────────────────────────────────────────
 info "Running database migrations..."
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" \
+docker compose -f docker-compose.server.yml --env-file "$ENV_FILE" \
   exec -T backend npx prisma migrate deploy || warn "Migrations may have already run"
 
 # ─── Systemd service ─────────────────────────────────────────────────────────
@@ -158,8 +159,8 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${APP_DIR}
-ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml --env-file ${ENV_FILE} up -d
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml --env-file ${ENV_FILE} down
+ExecStart=/usr/bin/docker compose -f docker-compose.server.yml --env-file ${ENV_FILE} up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.server.yml --env-file ${ENV_FILE} down
 TimeoutStartSec=300
 
 [Install]
@@ -174,7 +175,7 @@ cat > /usr/local/bin/crm-deploy << 'DEPLOY'
 # Quick deploy — run this after any code change
 cd /opt/whatsapp-crm
 git pull origin main
-bash deploy/deploy.sh
+docker compose -f docker-compose.server.yml --env-file deploy/.env.production build --no-cache backend frontend && docker compose -f docker-compose.server.yml --env-file deploy/.env.production up -d --no-deps backend frontend && docker exec crm_nginx nginx -s reload 2>/dev/null || true
 echo "✅ Deployed!"
 DEPLOY
 chmod +x /usr/local/bin/crm-deploy
@@ -193,7 +194,7 @@ printf "║  🖥️  Server:   %-54s ║\n" "${SERVER_IP}"
 echo "╠══════════════════════════════════════════════════════════════════════╣"
 echo "║  To deploy updates:  crm-deploy                                      ║"
 echo "║  To view logs:       docker compose -f /opt/whatsapp-crm/            ║"
-echo "║                      docker-compose.prod.yml logs -f backend          ║"
+echo "║                      docker-compose.server.yml logs -f backend          ║"
 echo "╠══════════════════════════════════════════════════════════════════════╣"
 echo "║  DNS — Add these records in your domain registrar:                   ║"
 printf "║    A    @   →  %-54s ║\n" "${SERVER_IP}"
