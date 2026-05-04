@@ -162,8 +162,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// Make io accessible
+// Make io accessible globally (for follow-up scheduler and webhook handler)
 app.set('io', io);
+(global as any).io = io;
 
 app.use(errorHandler);
 
