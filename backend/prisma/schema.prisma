@@ -242,6 +242,8 @@ model Contact {
   gdprConsent     Boolean       @default(false)
   gdprConsentDate DateTime?
   isBlocked       Boolean       @default(false)
+  isArchived      Boolean       @default(false)
+  archivedAt      DateTime?
   mergedIntoId    String?
   customFields    Json?
   lastContactedAt DateTime?

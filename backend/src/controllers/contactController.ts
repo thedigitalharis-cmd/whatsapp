@@ -4,10 +4,13 @@ import { AuthRequest } from '../middleware/auth';
 
 export const getContacts = async (req: AuthRequest, res: Response) => {
   try {
-    const { page = 1, limit = 50, search, source, groupId, tagId } = req.query;
+    const { page = 1, limit = 50, search, source, groupId, tagId, archived } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { organizationId: req.user!.organizationId };
+    const where: any = {
+      organizationId: req.user!.organizationId,
+      isArchived: archived === 'true' ? true : false,
+    };
     if (search) {
       where.OR = [
         { firstName: { contains: search as string, mode: 'insensitive' } },
@@ -93,6 +96,55 @@ export const deleteContact = async (req: AuthRequest, res: Response) => {
   try {
     await prisma.contact.delete({ where: { id: req.params.id } });
     res.json({ message: 'Contact deleted' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const archiveContact = async (req: AuthRequest, res: Response) => {
+  try {
+    const contact = await prisma.contact.update({
+      where: { id: req.params.id },
+      data: { isArchived: true, archivedAt: new Date() },
+    });
+    res.json(contact);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const unarchiveContact = async (req: AuthRequest, res: Response) => {
+  try {
+    const contact = await prisma.contact.update({
+      where: { id: req.params.id },
+      data: { isArchived: false, archivedAt: null },
+    });
+    res.json(contact);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const bulkArchiveContacts = async (req: AuthRequest, res: Response) => {
+  try {
+    const { contactIds } = req.body;
+    await prisma.contact.updateMany({
+      where: { id: { in: contactIds }, organizationId: req.user!.organizationId },
+      data: { isArchived: true, archivedAt: new Date() },
+    });
+    res.json({ archived: contactIds.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const bulkDeleteContacts = async (req: AuthRequest, res: Response) => {
+  try {
+    const { contactIds } = req.body;
+    await prisma.contact.deleteMany({
+      where: { id: { in: contactIds }, organizationId: req.user!.organizationId },
+    });
+    res.json({ deleted: contactIds.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -3,9 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon, MagnifyingGlassIcon, FunnelIcon, ArrowDownTrayIcon,
   ArrowUpTrayIcon, TrashIcon, PencilIcon, PhoneIcon, EnvelopeIcon,
-  BuildingOfficeIcon, TagIcon, CheckIcon,
+  BuildingOfficeIcon, TagIcon, ArchiveBoxIcon, ArchiveBoxXMarkIcon,
+  EllipsisVerticalIcon,
 } from '@heroicons/react/24/outline';
-import { contactsApi } from '../services/api';
+import { contactsApi, api } from '../services/api';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -108,38 +109,51 @@ const ContactsPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState<any>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contacts', page, search],
-    queryFn: () => contactsApi.list({ page, limit: 50, search }).then(r => r.data),
+    queryKey: ['contacts', page, search, showArchived],
+    queryFn: () => contactsApi.list({ page, limit: 50, search, archived: showArchived ? 'true' : 'false' }).then(r => r.data),
   });
 
   const createMutation = useMutation({
     mutationFn: contactsApi.create,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['contacts'] });
-      setShowModal(false);
-      toast.success('Contact created');
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setShowModal(false); toast.success('Contact created'); },
     onError: () => toast.error('Failed to create contact'),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: any) => contactsApi.update(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['contacts'] });
-      setEditContact(null);
-      toast.success('Contact updated');
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setEditContact(null); toast.success('Contact updated'); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: contactsApi.delete,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['contacts'] });
-      toast.success('Contact deleted');
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setConfirmDelete(null); toast.success('Contact deleted'); },
+    onError: () => toast.error('Cannot delete — contact has linked records'),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/contacts/${id}/archive`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); toast.success('Contact archived'); },
+  });
+
+  const unarchiveMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/contacts/${id}/unarchive`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); toast.success('Contact restored'); },
+  });
+
+  const bulkArchiveMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post('/contacts/bulk-archive', { contactIds: ids }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setSelected([]); toast.success(`${selected.length} contacts archived`); },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post('/contacts/bulk-delete', { contactIds: ids }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setSelected([]); toast.success(`${selected.length} contacts deleted`); },
+    onError: () => toast.error('Some contacts could not be deleted'),
   });
 
   const toggleSelect = (id: string) => {
@@ -154,6 +168,24 @@ const ContactsPage: React.FC = () => {
     }
   };
 
+  const handleExport = () => {
+    const rows = (data?.data || []);
+    if (!rows.length) { toast.error('No contacts to export'); return; }
+    const csv = [
+      ['Name', 'Phone', 'Email', 'Company', 'Source', 'Created'],
+      ...rows.map((c: any) => [
+        `${c.firstName} ${c.lastName || ''}`.trim(),
+        c.phone, c.email || '', c.company || '', c.source,
+        format(new Date(c.createdAt), 'yyyy-MM-dd'),
+      ]),
+    ].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'contacts.csv'; a.click();
+    toast.success('Contacts exported');
+  };
+
   return (
     <div className="p-6">
       {(showModal || editContact) && (
@@ -164,25 +196,52 @@ const ContactsPage: React.FC = () => {
         />
       )}
 
+      {/* Delete confirm modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6">
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <TrashIcon className="w-7 h-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Delete Contact?</h3>
+              <p className="text-sm text-gray-500 mt-1">This action cannot be undone. All linked conversations and data will be removed.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => deleteMutation.mutate(confirmDelete)} disabled={deleteMutation.isPending} className="btn-danger flex-1">
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contacts</h1>
-          <p className="text-gray-500 text-sm mt-1">{data?.total || 0} total contacts</p>
+          <p className="text-gray-500 text-sm mt-1">{data?.total || 0} {showArchived ? 'archived' : 'active'} contacts</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-secondary">
-            <ArrowUpTrayIcon className="w-4 h-4" />
-            Import
+          {/* Archive toggle */}
+          <button
+            onClick={() => { setShowArchived(!showArchived); setSelected([]); setPage(1); }}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors ${showArchived ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >
+            <ArchiveBoxIcon className="w-4 h-4" />
+            {showArchived ? 'View Active' : 'View Archived'}
           </button>
-          <button className="btn-secondary">
+          <button onClick={handleExport} className="btn-secondary">
             <ArrowDownTrayIcon className="w-4 h-4" />
-            Export
+            Export CSV
           </button>
-          <button onClick={() => setShowModal(true)} className="btn-primary">
-            <PlusIcon className="w-4 h-4" />
-            Add Contact
-          </button>
+          {!showArchived && (
+            <button onClick={() => setShowModal(true)} className="btn-primary">
+              <PlusIcon className="w-4 h-4" />
+              Add Contact
+            </button>
+          )}
         </div>
       </div>
 
@@ -206,15 +265,34 @@ const ContactsPage: React.FC = () => {
 
       {/* Bulk actions */}
       {selected.length > 0 && (
-        <div className="bg-whatsapp-green/10 border border-whatsapp-green/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-4">
+        <div className="bg-whatsapp-green/10 border border-whatsapp-green/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-4 flex-wrap">
           <span className="text-sm font-medium text-whatsapp-teal">{selected.length} selected</span>
-          <button className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1">
-            <TrashIcon className="w-3.5 h-3.5" /> Delete
+          {!showArchived ? (
+            <button
+              onClick={() => bulkArchiveMutation.mutate(selected)}
+              disabled={bulkArchiveMutation.isPending}
+              className="text-xs text-amber-600 hover:text-amber-800 flex items-center gap-1 font-medium"
+            >
+              <ArchiveBoxIcon className="w-3.5 h-3.5" />
+              {bulkArchiveMutation.isPending ? 'Archiving...' : `Archive ${selected.length}`}
+            </button>
+          ) : (
+            <button
+              onClick={() => { selected.forEach(id => unarchiveMutation.mutate(id)); setSelected([]); }}
+              className="text-xs text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
+            >
+              <ArchiveBoxXMarkIcon className="w-3.5 h-3.5" /> Restore {selected.length}
+            </button>
+          )}
+          <button
+            onClick={() => bulkDeleteMutation.mutate(selected)}
+            disabled={bulkDeleteMutation.isPending}
+            className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1 font-medium"
+          >
+            <TrashIcon className="w-3.5 h-3.5" />
+            {bulkDeleteMutation.isPending ? 'Deleting...' : `Delete ${selected.length}`}
           </button>
-          <button className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
-            <TagIcon className="w-3.5 h-3.5" /> Tag
-          </button>
-          <button onClick={() => setSelected([])} className="ml-auto text-xs text-gray-500">Clear</button>
+          <button onClick={() => setSelected([])} className="ml-auto text-xs text-gray-500 hover:text-gray-700">✕ Clear selection</button>
         </div>
       )}
 
@@ -268,7 +346,11 @@ const ContactsPage: React.FC = () => {
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">{contact.firstName} {contact.lastName}</p>
-                        {contact.gdprConsent && <p className="text-xs text-green-600">✓ GDPR</p>}
+                        <div className="flex gap-1 mt-0.5">
+                          {contact.gdprConsent && <p className="text-xs text-green-600">✓ GDPR</p>}
+                          {contact.isArchived && <p className="text-xs text-amber-600">📦 Archived</p>}
+                          {contact.isBlocked && <p className="text-xs text-red-600">🚫 Blocked</p>}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -312,19 +394,50 @@ const ContactsPage: React.FC = () => {
                     {format(new Date(contact.createdAt), 'MMM d, yyyy')}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => setEditContact(contact)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                      >
-                        <PencilIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteMutation.mutate(contact.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
+                    <div className="flex items-center gap-1 justify-end">
+                      {!showArchived ? (
+                        <>
+                          <button
+                            onClick={() => setEditContact(contact)}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="Edit"
+                          >
+                            <PencilIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => archiveMutation.mutate(contact.id)}
+                            disabled={archiveMutation.isPending}
+                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                            title="Archive"
+                          >
+                            <ArchiveBoxIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete(contact.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Delete"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => unarchiveMutation.mutate(contact.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-green-700 bg-green-50 rounded-lg hover:bg-green-100"
+                            title="Restore"
+                          >
+                            <ArchiveBoxXMarkIcon className="w-3.5 h-3.5" /> Restore
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete(contact.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Delete permanently"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
