@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to git
+
+resource_prefix = "whatsapp-crm"
+location        = "uaenorth"   # Dubai - closest to UAE
+environment     = "production"
+domain          = "crm.huco.ae"
+
+db_user         = "crm_admin"
+db_password     = "CHANGE_ME_StrongP@ssw0rd!"
+
+jwt_secret          = "CHANGE_ME_64_char_random_string_here_run_openssl_rand_hex_64"
+jwt_refresh_secret  = "CHANGE_ME_another_64_char_random_string"
+encryption_key      = "CHANGE_ME_32chars_exactly_here!!"
+
+whatsapp_verify_token = "crm_verify_y2y2v2i0"
+
+openai_api_key   = ""   # sk-proj-...
+stripe_secret_key = ""  # sk_live_...

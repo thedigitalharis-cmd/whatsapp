@@ -1,0 +1,166 @@
+name: Build & Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'whatsapp-crm-rg' }}
+  BACKEND_APP:    whatsapp-crm-backend
+  FRONTEND_APP:   whatsapp-crm-frontend
+
+jobs:
+  # ─── Test ──────────────────────────────────────────────────────────────────
+  test:
+    name: TypeScript Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: backend/package-lock.json }
+      - run: npm ci
+        working-directory: backend
+      - run: npx prisma generate
+        working-directory: backend
+      - run: npm run build
+        working-directory: backend
+
+  # ─── Build & Push to ACR ───────────────────────────────────────────────────
+  build:
+    name: Build & Push to ACR
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+      backend_fqdn: ${{ steps.get_fqdn.outputs.backend_fqdn }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get backend FQDN (for frontend build arg)
+        id: get_fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.BACKEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || echo "")
+          echo "backend_fqdn=$FQDN" >> $GITHUB_OUTPUT
+
+      - name: ACR Login
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-backend:${{ steps.tag.outputs.tag }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-frontend:${{ steps.tag.outputs.tag }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-frontend:latest
+          build-args: |
+            REACT_APP_API_URL=https://${{ steps.get_fqdn.outputs.backend_fqdn }}/api
+            REACT_APP_WS_URL=https://${{ steps.get_fqdn.outputs.backend_fqdn }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Deploy to Azure Container Apps ───────────────────────────────────────
+  deploy:
+    name: Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Update Backend Container App
+        run: |
+          az containerapp update \
+            --name ${{ env.BACKEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-backend:${{ needs.build.outputs.image_tag }} \
+            --output none
+
+      - name: Wait for backend healthy
+        run: |
+          echo "Waiting for backend to be healthy..."
+          for i in $(seq 1 20); do
+            STATUS=$(az containerapp revision list \
+              --name ${{ env.BACKEND_APP }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "[0].properties.healthState" -o tsv 2>/dev/null || echo "unknown")
+            echo "Attempt $i: $STATUS"
+            [[ "$STATUS" == "Healthy" ]] && break
+            sleep 15
+          done
+
+      - name: Run DB Migrations
+        run: |
+          az containerapp exec \
+            --name ${{ env.BACKEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --command "npx prisma migrate deploy" || echo "Migration may have already run"
+
+      - name: Update Frontend Container App
+        run: |
+          az containerapp update \
+            --name ${{ env.FRONTEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/whatsapp-crm-frontend:${{ needs.build.outputs.image_tag }} \
+            --output none
+
+      - name: Print deployment URLs
+        run: |
+          BACKEND=$(az containerapp show --name ${{ env.BACKEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          FRONTEND=$(az containerapp show --name ${{ env.FRONTEND_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "✅ Backend:  https://$BACKEND"
+          echo "✅ Frontend: https://$FRONTEND"
+          echo "✅ Webhook:  https://$BACKEND/webhook/whatsapp"
