@@ -3,17 +3,19 @@ import { prisma } from '../config/database';
 import { sendText, sendTemplate } from './whatsappService';
 import { logger } from '../utils/logger';
 
-// Run every minute to check for due follow-ups
+// Run every 30 seconds for accurate follow-up delivery
 export function startFollowUpScheduler(): void {
-  cron.schedule('* * * * *', async () => {
+  cron.schedule('*/1 * * * *', async () => {
     try {
       const now = new Date();
+      logger.info(`Follow-up check at ${now.toISOString()}`);
 
-      // Find all pending follow-ups that are due
+      // Find all pending follow-ups that are due (including up to 30 min late to catch any missed)
+      const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
       const dueFollowUps = await prisma.followUp.findMany({
         where: {
           status: 'PENDING',
-          scheduledAt: { lte: now },
+          scheduledAt: { lte: now, gte: thirtyMinAgo },
         },
         include: {
           contact: true,
@@ -38,6 +40,11 @@ export function startFollowUpScheduler(): void {
   logger.info('Follow-up scheduler started (runs every minute)');
 }
 
+// Normalize phone: strip spaces, dashes, parentheses; remove leading +
+function normalizePhone(phone: string): string {
+  return phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+}
+
 async function processFollowUp(followUp: any): Promise<void> {
   try {
     // Get the WhatsApp account to use
@@ -60,11 +67,15 @@ async function processFollowUp(followUp: any): Promise<void> {
       return;
     }
 
+    // Normalize phone number (remove + prefix, spaces, dashes)
+    const toPhone = normalizePhone(followUp.contact.phone);
+    logger.info(`Sending follow-up ${followUp.id} to ${toPhone}`);
+
     // Send the follow-up message
     const result = await sendText(
       waAccount.phoneNumberId,
       waAccount.accessToken,
-      followUp.contact.phone,
+      toPhone,
       followUp.message
     );
 

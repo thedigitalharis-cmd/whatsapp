@@ -96,14 +96,52 @@ router.patch('/:id/cancel', async (req: AuthRequest, res: Response) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Send now (manual trigger)
+// Send now (immediate trigger — bypasses scheduler)
 router.post('/:id/send-now', async (req: AuthRequest, res: Response) => {
   try {
-    await prisma.followUp.update({
-      where: { id: req.params.id },
-      data: { scheduledAt: new Date(Date.now() - 1000) }, // set to past so scheduler picks it up immediately
+    const followUp = await prisma.followUp.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+      include: {
+        contact: true,
+        conversation: { include: { whatsappAccount: true } },
+        organization: { include: { whatsappAccounts: { where: { status: 'ACTIVE' }, take: 1 } } },
+      },
     });
-    res.json({ message: 'Follow-up will be sent within 60 seconds' });
+    if (!followUp) return res.status(404).json({ error: 'Not found' });
+    if (followUp.status !== 'PENDING') return res.status(400).json({ error: 'Only PENDING follow-ups can be sent' });
+
+    const waAccount = (followUp.conversation as any)?.whatsappAccount
+      || (followUp.organization as any)?.whatsappAccounts?.[0];
+
+    if (!waAccount || !followUp.contact?.phone) {
+      return res.status(400).json({ error: 'No WhatsApp account or contact phone' });
+    }
+
+    const { sendText } = await import('../services/whatsappService');
+    const toPhone = followUp.contact.phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+    const result = await sendText(waAccount.phoneNumberId, waAccount.accessToken, toPhone, followUp.message);
+    const waMessageId = result?.messages?.[0]?.id;
+
+    await prisma.followUp.update({
+      where: { id: followUp.id },
+      data: { status: 'SENT', sentAt: new Date(), waMessageId },
+    });
+
+    if (followUp.conversationId) {
+      await prisma.message.create({
+        data: {
+          conversationId: followUp.conversationId,
+          direction: 'OUTBOUND',
+          type: 'TEXT',
+          content: `🔔 [Follow-up] ${followUp.message}`,
+          status: 'SENT',
+          waMessageId,
+        },
+      });
+      await prisma.conversation.update({ where: { id: followUp.conversationId }, data: { lastMessageAt: new Date() } });
+    }
+
+    res.json({ message: 'Sent!', waMessageId });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
