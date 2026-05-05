@@ -1,7 +1,8 @@
 node_modules
-build
 .env
 *.env*
 .git
 .gitignore
 README.md
+src
+public
