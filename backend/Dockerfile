@@ -2,17 +2,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache curl
+# Install OpenSSL — required by Prisma on Alpine
+RUN apk add --no-cache curl openssl openssl-dev libc6-compat
 
-# Install production dependencies only
+# Install production dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev --prefer-offline
 
-# Copy prisma schema and generate client
+# Copy prisma schema and generate client for Alpine/OpenSSL 3
 COPY prisma ./prisma
 RUN npx prisma generate
 
-# Copy pre-built dist (compiled on CI/cloud agent, not here)
+# Copy pre-built dist (compiled on CI, not here)
 COPY dist ./dist
 
 ENV NODE_ENV=production
