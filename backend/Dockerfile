@@ -1,22 +1,18 @@
-# ─── Production image (expects pre-built dist/ on host) ──────────────────────
-# Build is done on the host with: npm run build
-# Then Docker just packages the pre-built output — no tsc inside container
-
 FROM node:20-alpine
 
 WORKDIR /app
 
 RUN apk add --no-cache curl
 
-# Install ALL dependencies (including dev for prisma generate)
+# Install production dependencies only
 COPY package*.json ./
-RUN npm ci --prefer-offline
+RUN npm ci --omit=dev --prefer-offline
 
 # Copy prisma schema and generate client
 COPY prisma ./prisma
 RUN npx prisma generate
 
-# Copy pre-built dist from host
+# Copy pre-built dist (compiled on CI/cloud agent, not here)
 COPY dist ./dist
 
 ENV NODE_ENV=production

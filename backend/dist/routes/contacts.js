@@ -1,0 +1,20 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const contactController_1 = require("../controllers/contactController");
+const router = (0, express_1.Router)();
+router.get('/', contactController_1.getContacts);
+router.post('/', contactController_1.createContact);
+router.post('/bulk-import', contactController_1.bulkImportContacts);
+router.post('/bulk-archive', contactController_1.bulkArchiveContacts);
+router.post('/bulk-delete', contactController_1.bulkDeleteContacts);
+router.post('/merge', contactController_1.mergeContacts);
+router.get('/groups', contactController_1.getContactGroups);
+router.post('/groups', contactController_1.createContactGroup);
+router.get('/:id', contactController_1.getContact);
+router.put('/:id', contactController_1.updateContact);
+router.delete('/:id', contactController_1.deleteContact);
+router.patch('/:id/archive', contactController_1.archiveContact);
+router.patch('/:id/unarchive', contactController_1.unarchiveContact);
+exports.default = router;
+//# sourceMappingURL=contacts.js.map

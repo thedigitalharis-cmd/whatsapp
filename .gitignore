@@ -1,5 +1,5 @@
 node_modules/
-dist/
+# dist/ — committed so servers don't need to compile
 build/
 .env
 *.env.local
