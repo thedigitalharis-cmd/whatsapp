@@ -60,20 +60,10 @@ const io = new socket_io_1.Server(httpServer, {
 exports.io = io;
 // Security middleware
 app.use((0, helmet_1.default)({ crossOriginResourcePolicy: false }));
-const allowedOrigins = [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-];
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin)
-            return callback(null, true);
-        if (allowedOrigins.includes(origin) || origin.endsWith('.trycloudflare.com')) {
-            return callback(null, true);
-        }
-        return callback(new Error(`CORS blocked: ${origin}`));
+        // Allow all origins — handled by nginx in production
+        return callback(null, true);
     },
     credentials: true,
 }));
