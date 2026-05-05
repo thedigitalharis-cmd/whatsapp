@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Used on the GCP/Hetzner server — builds images locally from source code
 # No Docker registry needed
 
