@@ -16,7 +16,7 @@ COPY package*.json ./
 RUN npm ci --prefer-offline
 
 COPY . .
-RUN NODE_OPTIONS="--max-old-space-size=512" npm run build
+RUN NODE_OPTIONS="--max-old-space-size=384" npm run build
 
 # ─── Production nginx ───────────────────────────────────────────────────────
 FROM nginx:1.25-alpine
