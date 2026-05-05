@@ -41,6 +41,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # Note: run 'npm run build' in ./backend on host before docker compose up
     container_name: crm_backend
     restart: always
     depends_on:
