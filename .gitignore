@@ -1,6 +1,5 @@
 node_modules/
-# dist/ — committed so servers don't need to compile
-build/
+# dist/ and build/ are committed so servers don't need to compile
 .env
 *.env.local
 .DS_Store
