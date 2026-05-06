@@ -344,9 +344,9 @@ const InboxPage: React.FC = () => {
           });
 
           if (uploadRes.ok) {
-            const { url: publicUrl } = await uploadRes.json();
-            // Send as audio to WhatsApp via public URL
-            sendMutation.mutate({ type: 'AUDIO', mediaUrl: publicUrl, mediaType: 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
+            const { url: publicUrl, mimeType } = await uploadRes.json();
+            // Send as audio to WhatsApp via public URL (OGG format required by Meta)
+            sendMutation.mutate({ type: 'AUDIO', mediaUrl: publicUrl, mediaType: mimeType || 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
           } else {
             throw new Error('Upload failed');
           }
