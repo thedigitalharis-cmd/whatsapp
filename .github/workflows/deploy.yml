@@ -74,21 +74,21 @@ jobs:
             GENERATE_SOURCEMAP=false
             EOF
 
-            # Rebuild Docker images
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production \
+            # Rebuild Docker images locally on the server
+            docker compose -f docker-compose.server.yml --env-file deploy/.env.production \
               build --no-cache backend frontend
             echo "✅ Images built"
 
             # Run DB migrations
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production \
+            docker compose -f docker-compose.server.yml --env-file deploy/.env.production \
               run --rm backend npx prisma migrate deploy
             echo "✅ Migrations done"
 
             # Zero-downtime rolling update
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production \
+            docker compose -f docker-compose.server.yml --env-file deploy/.env.production \
               up -d --no-deps backend
             sleep 10
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production \
+            docker compose -f docker-compose.server.yml --env-file deploy/.env.production \
               up -d --no-deps frontend
             docker exec crm_nginx nginx -s reload
             echo "✅ Services updated"
