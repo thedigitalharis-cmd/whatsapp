@@ -685,18 +685,19 @@ const InboxPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 2: Action toolbar */}
-            <div className="flex items-center gap-1 px-3 pb-2 overflow-x-auto scrollbar-hide">
+            {/* Row 2: Icon-only action bar */}
+            <div className="flex items-center px-3 pb-2.5 gap-1">
 
               {/* Assign */}
-              <div className="relative flex-shrink-0">
+              <div className="relative">
                 <button onClick={() => { setShowAssign(!showAssign); setShowLabels(false); setShowMoreMenu(false); }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors hover:bg-white/10"
-                  style={{ color: '#aebac1' }}>
-                  <UserPlusIcon className="w-3.5 h-3.5" /> Assign
+                  className={`group flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${showAssign ? 'bg-white/15' : 'hover:bg-white/10'}`}
+                  title="Assign agent">
+                  <UserPlusIcon className="w-5 h-5" style={{ color: showAssign ? '#25d366' : '#aebac1' }} />
+                  <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Assign</span>
                 </button>
                 {showAssign && (
-                  <div className="absolute left-0 top-9 w-56 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                  <div className="absolute left-0 top-14 w-56 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
                     <p className="text-xs font-semibold px-3 pb-1.5 uppercase" style={{ color: '#8696a0' }}>Agents</p>
                     {(users || []).map((u: any) => (
                       <button key={u.id} onClick={() => assignMutation.mutate({ agentId: u.id })}
@@ -708,7 +709,6 @@ const InboxPage: React.FC = () => {
                     ))}
                     {(teams || []).length > 0 && <>
                       <div className="border-t my-1" style={{ borderColor: '#2a3942' }} />
-                      <p className="text-xs font-semibold px-3 pb-1 uppercase" style={{ color: '#8696a0' }}>Teams</p>
                       {(teams || []).map((t: any) => (
                         <button key={t.id} onClick={() => assignMutation.mutate({ teamId: t.id })}
                           className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-white/5" style={{ color: '#e9edef' }}>
@@ -720,18 +720,20 @@ const InboxPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
-
               {/* Labels */}
-              <div className="relative flex-shrink-0">
+              <div className="relative">
                 <button onClick={() => { setShowLabels(!showLabels); setShowAssign(false); setShowMoreMenu(false); }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10"
-                  style={{ color: '#aebac1' }}>
-                  <TagIcon className="w-3.5 h-3.5" /> Labels
-                  {currentTags.length > 0 && <span className="ml-0.5 w-4 h-4 rounded-full text-xs font-bold flex items-center justify-center text-white" style={{ backgroundColor: '#25d366', fontSize: '10px' }}>{currentTags.length}</span>}
+                  className={`relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${showLabels ? 'bg-white/15' : 'hover:bg-white/10'}`}
+                  title="Labels">
+                  <TagIcon className="w-5 h-5" style={{ color: showLabels ? '#25d366' : '#aebac1' }} />
+                  <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Labels</span>
+                  {currentTags.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-white font-bold"
+                      style={{ backgroundColor: '#25d366', fontSize: '9px' }}>{currentTags.length}</span>
+                  )}
                 </button>
                 {showLabels && (
-                  <div className="absolute left-0 top-9 w-52 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                  <div className="absolute left-0 top-14 w-52 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
                     <p className="text-xs font-semibold px-3 pb-1.5 uppercase" style={{ color: '#8696a0' }}>Apply Labels</p>
                     {(tags || []).map((tag: any) => {
                       const applied = currentTags.some((t: any) => t.id === tag.id);
@@ -748,48 +750,46 @@ const InboxPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
-
               {/* Payment */}
               <button onClick={() => setShowPayment(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
-                style={{ color: '#aebac1' }}>
-                <CurrencyDollarIcon className="w-3.5 h-3.5" /> Payment
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-all" title="Payment / Invoice">
+                <CurrencyDollarIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Payment</span>
               </button>
 
               {/* Follow-up */}
               <button onClick={() => setShowFollowUp(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
-                style={{ color: '#aebac1' }}>
-                <BellIcon className="w-3.5 h-3.5" /> Follow-up
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-all" title="Schedule follow-up">
+                <BellIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Follow-up</span>
               </button>
 
               {/* Google Meet */}
               <button onClick={sendGoogleMeetLink}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
-                style={{ color: '#aebac1' }}>
-                <VideoCameraIcon className="w-3.5 h-3.5" /> Meet
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-all" title="Send Google Meet link">
+                <VideoCameraIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Meet</span>
               </button>
 
               {/* Add to Leads */}
-              <button onClick={() => createLeadMutation.mutate()}
-                disabled={createLeadMutation.isPending}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
-                style={{ color: '#aebac1' }}
-                title="Add contact to Leads">
-                <FunnelIcon className="w-3.5 h-3.5" /> Add to Leads
+              <button onClick={() => createLeadMutation.mutate()} disabled={createLeadMutation.isPending}
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-all" title="Add to Leads">
+                <FunnelIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>Leads</span>
               </button>
 
-              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
+              {/* Spacer */}
+              <div className="flex-1" />
 
               {/* More ⋮ */}
-              <div className="relative flex-shrink-0" ref={moreMenuRef}>
+              <div className="relative" ref={moreMenuRef}>
                 <button onClick={() => { setShowMoreMenu(!showMoreMenu); setShowAssign(false); setShowLabels(false); }}
-                  className="p-1.5 rounded-lg hover:bg-white/10">
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${showMoreMenu ? 'bg-white/15' : 'hover:bg-white/10'}`}>
                   <EllipsisVerticalIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                  <span className="text-xs" style={{ color: '#8696a0', fontSize: '10px' }}>More</span>
                 </button>
                 {showMoreMenu && (
-                  <div className="absolute right-0 top-9 w-56 rounded-2xl shadow-2xl z-50 py-1.5 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                  <div className="absolute right-0 top-14 w-56 rounded-2xl shadow-2xl z-50 py-1.5 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
                     {[
                       { icon: UserPlusIcon, label: 'Save / Edit Contact', action: () => { setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: '', gdprConsent: contact?.gdprConsent || false }); setShowSaveContact(true); setShowMoreMenu(false); } },
                       { icon: UserGroupIcon, label: 'Manage Groups', action: () => { setShowGroupModal(true); setShowMoreMenu(false); } },
