@@ -142,7 +142,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
 
 export const sendMessage = async (req: AuthRequest, res: Response) => {
   try {
-    const { type = 'TEXT', content, mediaUrl, mediaType, caption, interactive, template, replyToId } = req.body;
+    const { type = 'TEXT', content, mediaUrl, mediaType, mediaId, caption, interactive, template, replyToId } = req.body;
 
     const conversation = await prisma.conversation.findFirst({
       where: { id: req.params.id, organizationId: req.user!.organizationId },
@@ -159,7 +159,12 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
     } else if (type === 'DOCUMENT') {
       waPayload = { type: 'document', document: { link: mediaUrl, filename: caption || 'file' } };
     } else if (type === 'AUDIO') {
-      waPayload = { type: 'audio', audio: { link: mediaUrl } };
+      // Use media_id if available (uploaded to Meta), otherwise use link
+      if (mediaId) {
+        waPayload = { type: 'audio', audio: { id: mediaId } };
+      } else {
+        waPayload = { type: 'audio', audio: { link: mediaUrl } };
+      }
     } else if (type === 'VIDEO') {
       waPayload = { type: 'video', video: { link: mediaUrl, ...(caption && { caption }) } };
     } else if (type === 'LOCATION') {

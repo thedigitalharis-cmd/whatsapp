@@ -145,7 +145,7 @@ const getMessages = async (req, res) => {
 exports.getMessages = getMessages;
 const sendMessage = async (req, res) => {
     try {
-        const { type = 'TEXT', content, mediaUrl, mediaType, caption, interactive, template, replyToId } = req.body;
+        const { type = 'TEXT', content, mediaUrl, mediaType, mediaId, caption, interactive, template, replyToId } = req.body;
         const conversation = await database_1.prisma.conversation.findFirst({
             where: { id: req.params.id, organizationId: req.user.organizationId },
             include: { whatsappAccount: true, contact: true },
@@ -164,7 +164,13 @@ const sendMessage = async (req, res) => {
             waPayload = { type: 'document', document: { link: mediaUrl, filename: caption || 'file' } };
         }
         else if (type === 'AUDIO') {
-            waPayload = { type: 'audio', audio: { link: mediaUrl } };
+            // Use media_id if available (uploaded to Meta), otherwise use link
+            if (mediaId) {
+                waPayload = { type: 'audio', audio: { id: mediaId } };
+            }
+            else {
+                waPayload = { type: 'audio', audio: { link: mediaUrl } };
+            }
         }
         else if (type === 'VIDEO') {
             waPayload = { type: 'video', video: { link: mediaUrl, ...(caption && { caption }) } };

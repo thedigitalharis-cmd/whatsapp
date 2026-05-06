@@ -332,10 +332,12 @@ const InboxPage: React.FC = () => {
         if (blob.size < 500) { toast.error('Recording too short — try again'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
         const duration = recordingTime > 0 ? recordingTime : 1;
 
-        // Upload audio to server to get a public URL
+        // Upload audio to server — server gets WA credentials from DB, uploads to Meta
         try {
           const formData = new FormData();
           formData.append('audio', blob, `voice_${Date.now()}.webm`);
+          formData.append('conversationId', selectedConvId || '');
+
           const token = localStorage.getItem('token');
           const uploadRes = await fetch(`${process.env.REACT_APP_API_URL}/upload/audio`, {
             method: 'POST',
@@ -344,18 +346,20 @@ const InboxPage: React.FC = () => {
           });
 
           if (uploadRes.ok) {
-            const { url: publicUrl, mimeType } = await uploadRes.json();
-            // Send as audio to WhatsApp via public URL (OGG format required by Meta)
-            sendMutation.mutate({ type: 'AUDIO', mediaUrl: publicUrl, mediaType: mimeType || 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
+            const result = await uploadRes.json();
+            if (result.mediaId) {
+              // Send using Meta media_id (best quality, works reliably)
+              sendMutation.mutate({ type: 'AUDIO', mediaId: result.mediaId, mediaType: result.mimeType, content: `🎙️ Voice message (${duration}s)` });
+            } else if (result.url) {
+              // Fallback: send via URL
+              sendMutation.mutate({ type: 'AUDIO', mediaUrl: result.url, mediaType: result.mimeType || 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
+            }
+            toast.success('Voice message sent!');
           } else {
             throw new Error('Upload failed');
           }
-        } catch {
-          // Fallback: store locally and show as CRM note
-          const localUrl = URL.createObjectURL(blob);
-          // Add to conversation as internal note only (not sent to WhatsApp)
-          sendMutation.mutate({ type: 'TEXT', content: `🎙️ Voice message recorded (${duration}s) — saved in CRM only. To send voice to customer, use WhatsApp directly.` });
-          toast('Voice saved as note. For WhatsApp delivery, host audio on a public URL.', { duration: 5000 });
+        } catch (err: any) {
+          toast.error(`Voice message failed: ${err.message}`);
         }
         stream.getTracks().forEach(t => t.stop());
         setRecordingTime(0);

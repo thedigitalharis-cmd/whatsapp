@@ -52,30 +52,78 @@ router.post('/audio', upload.single('audio'), async (req: AuthRequest, res: Resp
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const { phoneNumberId, accessToken, conversationId } = req.body;
 
-    let finalFilename = req.file.filename;
-    let finalMimeType = 'audio/ogg';
+    // If conversationId given, get WhatsApp credentials from DB
+    let waPhoneNumberId = phoneNumberId;
+    let waAccessToken = accessToken;
 
-    // Try to convert to OGG (WhatsApp requires ogg/opus)
+    if (conversationId && (!waPhoneNumberId || !waAccessToken)) {
+      try {
+        const { prisma } = require('../config/database');
+        const conv = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          include: { whatsappAccount: { select: { phoneNumberId: true, accessToken: true } } },
+        });
+        if (conv?.whatsappAccount) {
+          waPhoneNumberId = conv.whatsappAccount.phoneNumberId;
+          waAccessToken = conv.whatsappAccount.accessToken;
+        }
+      } catch (e) { logger.warn('Could not get WA account from conversation'); }
+    }
+
+    let audioPath = req.file.path;
+    let audioMime = 'audio/ogg; codecs=opus';
+
+    // Convert to OGG/Opus if ffmpeg available
     try {
       const oggFilename = req.file.filename.replace('.webm', '.ogg');
       const oggPath = path.join(uploadDir, oggFilename);
       await convertToOgg(req.file.path, oggPath);
-
-      // Delete original webm
       try { fs.unlinkSync(req.file.path); } catch {}
-
-      finalFilename = oggFilename;
-    } catch (convErr) {
-      logger.warn('Audio conversion failed, using original file');
-      finalFilename = req.file.filename;
-      finalMimeType = req.file.mimetype;
+      audioPath = oggPath;
+    } catch {
+      logger.warn('FFmpeg not available, sending as webm');
+      audioMime = 'audio/webm';
     }
 
-    const url = `${protocol}://${host}/uploads/${finalFilename}`;
-    res.json({ url, filename: finalFilename, mimeType: finalMimeType });
+    // Upload to Meta and get media_id
+    if (waPhoneNumberId && waAccessToken) {
+      try {
+        const FormData = require('form-data');
+        const axios = require('axios');
+        const form = new FormData();
+        form.append('messaging_product', 'whatsapp');
+        form.append('type', audioMime);
+        form.append('file', fs.createReadStream(audioPath), {
+          filename: path.basename(audioPath),
+          contentType: audioMime,
+        });
+
+        const uploadResp = await axios.post(
+          `https://graph.facebook.com/v19.0/${waPhoneNumberId}/media`,
+          form,
+          { headers: { Authorization: `Bearer ${waAccessToken}`, ...form.getHeaders() } }
+        );
+
+        const mediaId = uploadResp.data.id;
+        logger.info(`Audio uploaded to Meta, media_id: ${mediaId}`);
+
+        // Clean up local file
+        try { fs.unlinkSync(audioPath); } catch {}
+
+        return res.json({ mediaId, mimeType: audioMime });
+      } catch (metaErr: any) {
+        logger.error('Meta audio upload failed:', metaErr.response?.data || metaErr.message);
+        // Fall through to return local URL
+      }
+    }
+
+    // Fallback: return local URL
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const url = `${protocol}://${host}/uploads/${path.basename(audioPath)}`;
+    res.json({ url, mimeType: audioMime });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
