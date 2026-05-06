@@ -9,7 +9,7 @@ import {
   BoltIcon, BellIcon, UserGroupIcon, NoSymbolIcon,
   ArchiveBoxIcon, TrashIcon, InformationCircleIcon,
   CheckCircleIcon, PhotoIcon, AdjustmentsHorizontalIcon,
-  ChevronLeftIcon,
+  ChevronLeftIcon, VideoCameraIcon, FunnelIcon, StopIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckSolid, XCircleIcon } from '@heroicons/react/24/solid';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
@@ -156,6 +156,10 @@ const InboxPage: React.FC = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
   const [showFollowUp, setShowFollowUp] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const recordingTimerRef = useRef<any>(null);
   const [showSaveContact, setShowSaveContact] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -261,6 +265,18 @@ const InboxPage: React.FC = () => {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['contact-groups'] }); setShowGroupModal(false); setGroupName(''); toast.success('Group created'); },
   });
 
+  // Convert contact to lead
+  const createLeadMutation = useMutation({
+    mutationFn: () => api.post('/leads', {
+      title: `${contact?.firstName} ${contact?.lastName || ''} — WhatsApp Lead`.trim(),
+      source: 'WHATSAPP',
+      contactId: contact?.id,
+      status: 'NEW',
+    }),
+    onSuccess: () => toast.success('✅ Lead created! View in Leads section.'),
+    onError: () => toast.error('Failed to create lead'),
+  });
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setShowMoreMenu(false);
@@ -301,6 +317,43 @@ const InboxPage: React.FC = () => {
       sendMutation.mutate({ type, mediaUrl: URL.createObjectURL(file), mediaType: file.type, caption: file.name, content: file.name });
     } catch { toast.error('Upload failed'); }
     finally { setUploadingFile(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        sendMutation.mutate({ type: 'AUDIO', mediaUrl: url, mediaType: 'audio/webm', content: `🎙️ Voice message (${recordingTime}s)` });
+        stream.getTracks().forEach(t => t.stop());
+        setRecordingTime(0);
+      };
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      let secs = 0;
+      recordingTimerRef.current = setInterval(() => { secs++; setRecordingTime(secs); if (secs >= 120) stopRecording(); }, 1000);
+    } catch { toast.error('Microphone permission denied'); }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder) { mediaRecorder.stop(); setMediaRecorder(null); }
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+  };
+
+  const sendGoogleMeetLink = () => {
+    const meetId = Math.random().toString(36).substring(2, 12);
+    const link = `https://meet.google.com/${meetId.slice(0,3)}-${meetId.slice(3,7)}-${meetId.slice(7,10)}`;
+    sendMutation.mutate({
+      type: 'TEXT',
+      content: `📹 *Google Meet Invitation*\n\nJoin the meeting here:\n${link}\n\nClick the link to join the video call.`,
+    });
+    toast.success('Google Meet link sent!');
   };
 
   const handleAIReply = async () => {
@@ -585,85 +638,109 @@ const InboxPage: React.FC = () => {
       {selectedConvId && selectedConv ? (
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
-          {/* Chat Header */}
-          <div className="flex items-center gap-3 px-4 py-2.5 flex-shrink-0" style={{ backgroundColor: '#202c33' }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}>
-              {contact?.firstName?.[0]?.toUpperCase()}
-            </div>
-            <div className="flex-1 cursor-pointer" onClick={() => setShowDetails(!showDetails)}>
-              <p className="text-sm font-semibold" style={{ color: '#e9edef' }}>
-                {contact?.firstName} {contact?.lastName}
-                {contact?.isBlocked && <span className="ml-2 text-xs text-red-400">🚫 Blocked</span>}
-              </p>
-              <p className="text-xs" style={{ color: '#8696a0' }}>
-                {selectedConv.agent ? `Agent: ${selectedConv.agent.firstName}` : 'Click for contact info'}
-                {' · '}
-                <span style={{ color: statusColors[selectedConv.status]?.text }}>{selectedConv.status}</span>
-              </p>
+          {/* ── Chat Header ─────────────────────────────────────────────── */}
+          <div className="flex-shrink-0" style={{ backgroundColor: '#202c33', borderBottom: '1px solid #2a3942' }}>
+            {/* Row 1: Contact info + status + info toggle */}
+            <div className="flex items-center gap-3 px-4 py-2.5">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}>
+                {contact?.firstName?.[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setShowDetails(!showDetails)}>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold truncate" style={{ color: '#e9edef' }}>
+                    {contact?.firstName} {contact?.lastName}
+                  </p>
+                  {contact?.isBlocked && <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">🚫 Blocked</span>}
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                    style={{ backgroundColor: selectedConv.status === 'OPEN' ? '#25d36625' : '#ffffff15', color: statusColors[selectedConv.status]?.text || '#8696a0' }}>
+                    {selectedConv.status}
+                  </span>
+                </div>
+                <p className="text-xs truncate" style={{ color: '#8696a0' }}>
+                  {contact?.phone} {selectedConv.agent ? `· 👤 ${selectedConv.agent.firstName}` : '· Unassigned'}
+                </p>
+              </div>
+
+              {/* Right: Resolve + Info */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {selectedConv.status === 'OPEN' ? (
+                  <button onClick={() => statusMutation.mutate('RESOLVED')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
+                    style={{ backgroundColor: '#25d366' }}>
+                    <CheckSolid className="w-3.5 h-3.5" /> Resolve
+                  </button>
+                ) : (
+                  <button onClick={() => statusMutation.mutate('OPEN')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg"
+                    style={{ backgroundColor: '#2a3942', color: '#e9edef' }}>
+                    <ArrowPathIcon className="w-3.5 h-3.5" /> Reopen
+                  </button>
+                )}
+                <button onClick={() => setShowDetails(!showDetails)}
+                  className={`p-2 rounded-full transition-colors ${showDetails ? 'bg-white/15' : 'hover:bg-white/10'}`}
+                  title="Contact Info">
+                  <InformationCircleIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
+                </button>
+              </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-1">
-              {selectedConv.status === 'OPEN' ? (
-                <button onClick={() => statusMutation.mutate('RESOLVED')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
-                  style={{ backgroundColor: '#25d366' }}>
-                  <CheckSolid className="w-3.5 h-3.5" /> Resolve
-                </button>
-              ) : (
-                <button onClick={() => statusMutation.mutate('OPEN')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg"
-                  style={{ backgroundColor: '#2a3942', color: '#e9edef' }}>
-                  <ArrowPathIcon className="w-3.5 h-3.5" /> Reopen
-                </button>
-              )}
+            {/* Row 2: Action toolbar */}
+            <div className="flex items-center gap-1 px-3 pb-2 overflow-x-auto scrollbar-hide">
 
               {/* Assign */}
-              <div className="relative">
+              <div className="relative flex-shrink-0">
                 <button onClick={() => { setShowAssign(!showAssign); setShowLabels(false); setShowMoreMenu(false); }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                  style={{ backgroundColor: '#2a3942', color: '#aebac1' }}>
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors hover:bg-white/10"
+                  style={{ color: '#aebac1' }}>
                   <UserPlusIcon className="w-3.5 h-3.5" /> Assign
                 </button>
                 {showAssign && (
-                  <div className="absolute right-0 top-10 w-56 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
-                    <p className="text-xs font-semibold px-3 pb-1.5" style={{ color: '#8696a0' }}>AGENTS</p>
+                  <div className="absolute left-0 top-9 w-56 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                    <p className="text-xs font-semibold px-3 pb-1.5 uppercase" style={{ color: '#8696a0' }}>Agents</p>
                     {(users || []).map((u: any) => (
                       <button key={u.id} onClick={() => assignMutation.mutate({ agentId: u.id })}
                         className="w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 hover:bg-white/5" style={{ color: '#e9edef' }}>
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: '#25d366' }}>{u.firstName[0]}</div>
-                        <div><p className="text-sm">{u.firstName} {u.lastName}</p><p className="text-xs" style={{ color: '#8696a0' }}>{u.role}</p></div>
-                        {selectedConv.agentId === u.id && <CheckSolid className="w-4 h-4 text-green-400 ml-auto" />}
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#25d366' }}>{u.firstName[0]}</div>
+                        <div className="min-w-0"><p className="text-sm truncate">{u.firstName} {u.lastName}</p><p className="text-xs" style={{ color: '#8696a0' }}>{u.role}</p></div>
+                        {selectedConv.agentId === u.id && <CheckSolid className="w-4 h-4 text-green-400 ml-auto flex-shrink-0" />}
                       </button>
                     ))}
-                    {(teams || []).length > 0 && (teams || []).map((t: any) => (
-                      <button key={t.id} onClick={() => assignMutation.mutate({ teamId: t.id })}
-                        className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-white/5" style={{ color: '#e9edef' }}>
-                        <UserGroupIcon className="w-4 h-4" style={{ color: '#8696a0' }} /> {t.name}
-                      </button>
-                    ))}
+                    {(teams || []).length > 0 && <>
+                      <div className="border-t my-1" style={{ borderColor: '#2a3942' }} />
+                      <p className="text-xs font-semibold px-3 pb-1 uppercase" style={{ color: '#8696a0' }}>Teams</p>
+                      {(teams || []).map((t: any) => (
+                        <button key={t.id} onClick={() => assignMutation.mutate({ teamId: t.id })}
+                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-white/5" style={{ color: '#e9edef' }}>
+                          <UserGroupIcon className="w-4 h-4" style={{ color: '#8696a0' }} /> {t.name}
+                        </button>
+                      ))}
+                    </>}
                   </div>
                 )}
               </div>
 
+              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
+
               {/* Labels */}
-              <div className="relative">
+              <div className="relative flex-shrink-0">
                 <button onClick={() => { setShowLabels(!showLabels); setShowAssign(false); setShowMoreMenu(false); }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg"
-                  style={{ backgroundColor: '#2a3942', color: '#aebac1' }}>
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10"
+                  style={{ color: '#aebac1' }}>
                   <TagIcon className="w-3.5 h-3.5" /> Labels
+                  {currentTags.length > 0 && <span className="ml-0.5 w-4 h-4 rounded-full text-xs font-bold flex items-center justify-center text-white" style={{ backgroundColor: '#25d366', fontSize: '10px' }}>{currentTags.length}</span>}
                 </button>
                 {showLabels && (
-                  <div className="absolute right-0 top-10 w-48 rounded-2xl shadow-2xl z-50 py-2" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                  <div className="absolute left-0 top-9 w-52 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                    <p className="text-xs font-semibold px-3 pb-1.5 uppercase" style={{ color: '#8696a0' }}>Apply Labels</p>
                     {(tags || []).map((tag: any) => {
                       const applied = currentTags.some((t: any) => t.id === tag.id);
                       return (
                         <button key={tag.id} onClick={() => labelMutation.mutate({ tagId: tag.id, action: applied ? 'remove' : 'add' })}
-                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-white/5" style={{ color: '#e9edef' }}>
-                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                          {tag.name}
-                          {applied && <CheckSolid className="w-4 h-4 text-green-400 ml-auto" />}
+                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 hover:bg-white/5" style={{ color: '#e9edef' }}>
+                          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                          <span className="flex-1 truncate">{tag.name}</span>
+                          {applied && <CheckSolid className="w-4 h-4 text-green-400 flex-shrink-0" />}
                         </button>
                       );
                     })}
@@ -671,66 +748,80 @@ const InboxPage: React.FC = () => {
                 )}
               </div>
 
+              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
+
               {/* Payment */}
               <button onClick={() => setShowPayment(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg"
-                style={{ backgroundColor: '#2a3942', color: '#aebac1' }}>
-                <CurrencyDollarIcon className="w-3.5 h-3.5" /> Pay
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
+                style={{ color: '#aebac1' }}>
+                <CurrencyDollarIcon className="w-3.5 h-3.5" /> Payment
               </button>
 
               {/* Follow-up */}
               <button onClick={() => setShowFollowUp(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg"
-                style={{ backgroundColor: '#2a3942', color: '#aebac1' }}>
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
+                style={{ color: '#aebac1' }}>
                 <BellIcon className="w-3.5 h-3.5" /> Follow-up
               </button>
 
-              {/* More */}
-              <div className="relative" ref={moreMenuRef}>
+              {/* Google Meet */}
+              <button onClick={sendGoogleMeetLink}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
+                style={{ color: '#aebac1' }}>
+                <VideoCameraIcon className="w-3.5 h-3.5" /> Meet
+              </button>
+
+              {/* Add to Leads */}
+              <button onClick={() => createLeadMutation.mutate()}
+                disabled={createLeadMutation.isPending}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-white/10 flex-shrink-0"
+                style={{ color: '#aebac1' }}
+                title="Add contact to Leads">
+                <FunnelIcon className="w-3.5 h-3.5" /> Add to Leads
+              </button>
+
+              <div className="w-px h-4 opacity-20 bg-white flex-shrink-0" />
+
+              {/* More ⋮ */}
+              <div className="relative flex-shrink-0" ref={moreMenuRef}>
                 <button onClick={() => { setShowMoreMenu(!showMoreMenu); setShowAssign(false); setShowLabels(false); }}
-                  className="p-2 rounded-full hover:bg-white/10">
+                  className="p-1.5 rounded-lg hover:bg-white/10">
                   <EllipsisVerticalIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
                 </button>
                 {showMoreMenu && (
-                  <div className="absolute right-0 top-10 w-52 rounded-2xl shadow-2xl z-50 py-1.5 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
+                  <div className="absolute right-0 top-9 w-56 rounded-2xl shadow-2xl z-50 py-1.5 overflow-hidden" style={{ backgroundColor: '#233138', border: '1px solid #2a3942' }}>
                     {[
-                      { icon: UserPlusIcon, label: 'Save Contact', action: () => { setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: '', gdprConsent: contact?.gdprConsent || false }); setShowSaveContact(true); setShowMoreMenu(false); } },
+                      { icon: UserPlusIcon, label: 'Save / Edit Contact', action: () => { setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: '', gdprConsent: contact?.gdprConsent || false }); setShowSaveContact(true); setShowMoreMenu(false); } },
                       { icon: UserGroupIcon, label: 'Manage Groups', action: () => { setShowGroupModal(true); setShowMoreMenu(false); } },
                       { icon: ArchiveBoxIcon, label: 'Archive Chat', action: () => { archiveMutation.mutate(); setShowMoreMenu(false); }, color: '#f59e0b' },
-                      { icon: NoSymbolIcon, label: contact?.isBlocked ? 'Unblock Contact' : 'Block Contact', action: () => blockMutation.mutate(), color: '#ef4444' },
+                      { icon: NoSymbolIcon, label: contact?.isBlocked ? 'Unblock Contact' : 'Block Contact', action: () => { blockMutation.mutate(); setShowMoreMenu(false); }, color: '#ef4444' },
                       { icon: TrashIcon, label: 'Delete Chat', action: () => { setShowDeleteConfirm(true); setShowMoreMenu(false); }, color: '#ef4444' },
                     ].map(item => (
                       <button key={item.label} onClick={item.action}
                         className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-white/5"
                         style={{ color: item.color || '#e9edef' }}>
-                        <item.icon className="w-4 h-4" />
+                        <item.icon className="w-4 h-4 flex-shrink-0" />
                         {item.label}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-
-              {/* Info */}
-              <button onClick={() => setShowDetails(!showDetails)}
-                className={`p-2 rounded-full hover:bg-white/10 ${showDetails ? 'bg-white/10' : ''}`}>
-                <InformationCircleIcon className="w-5 h-5" style={{ color: '#aebac1' }} />
-              </button>
             </div>
+
+            {/* Applied Labels row */}
+            {currentTags.length > 0 && (
+              <div className="flex items-center gap-1.5 px-4 pb-2 flex-wrap">
+                {currentTags.map((tag: any) => (
+                  <span key={tag.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white font-medium"
+                    style={{ backgroundColor: tag.color }}>
+                    {tag.name}
+                    <button onClick={() => labelMutation.mutate({ tagId: tag.id, action: 'remove' })} className="hover:opacity-70 ml-0.5 leading-none">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-
-          {/* Applied Labels */}
-          {currentTags.length > 0 && (
-            <div className="flex items-center gap-2 px-4 py-1.5 flex-wrap" style={{ backgroundColor: '#182229' }}>
-              {currentTags.map((tag: any) => (
-                <span key={tag.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white font-medium"
-                  style={{ backgroundColor: tag.color }}>
-                  {tag.name}
-                  <button onClick={() => labelMutation.mutate({ tagId: tag.id, action: 'remove' })} className="hover:opacity-70">×</button>
-                </span>
-              ))}
-            </div>
-          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto py-4" style={bgStyle}>
@@ -822,16 +913,27 @@ const InboxPage: React.FC = () => {
                 }
               </button>
 
-              {/* Send / Mic */}
-              {message.trim() ? (
+              {/* Send / Mic / Stop Recording */}
+              {isRecording ? (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-xs font-mono text-red-400 animate-pulse">{recordingTime}s</span>
+                  <button onClick={stopRecording}
+                    className="w-11 h-11 rounded-full flex items-center justify-center animate-pulse"
+                    style={{ backgroundColor: '#ef4444' }}>
+                    <StopIcon className="w-5 h-5 text-white" />
+                  </button>
+                </div>
+              ) : message.trim() ? (
                 <button onClick={handleSend} disabled={sendMutation.isPending}
                   className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-50"
                   style={{ backgroundColor: '#25d366' }}>
                   <PaperAirplaneIcon className="w-5 h-5 text-white" />
                 </button>
               ) : (
-                <button className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: '#25d366' }}>
+                <button onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording}
+                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: '#25d366' }}
+                  title="Hold to record voice message">
                   <MicrophoneIcon className="w-5 h-5 text-white" />
                 </button>
               )}
@@ -930,7 +1032,12 @@ const InboxPage: React.FC = () => {
                 { label: '💳 Payment Link', action: () => setShowPayment(true), color: '#25d366' },
                 { label: '🧾 Send Invoice', action: () => setShowPayment(true), color: '#3b82f6' },
                 { label: '🔔 Schedule Follow-up', action: () => setShowFollowUp(true), color: '#f59e0b' },
+                { label: '📹 Send Google Meet Link', action: sendGoogleMeetLink, color: '#06b6d4' },
+                { label: '🎙️ Record Voice Message', action: isRecording ? stopRecording : startRecording, color: isRecording ? '#ef4444' : '#8b5cf6' },
+                { label: '🎯 Add to Leads', action: () => createLeadMutation.mutate(), color: '#f97316' },
                 { label: '✨ AI Reply', action: handleAIReply, color: '#8b5cf6' },
+                { label: '👥 Manage Groups', action: () => setShowGroupModal(true), color: '#aebac1' },
+                { label: '🚫 Block Contact', action: () => blockMutation.mutate(), color: contact?.isBlocked ? '#25d366' : '#ef4444' },
                 { label: '📦 Archive Chat', action: () => archiveMutation.mutate(), color: '#6b7280' },
                 { label: '🗑️ Delete Chat', action: () => setShowDeleteConfirm(true), color: '#ef4444' },
               ].map(item => (
