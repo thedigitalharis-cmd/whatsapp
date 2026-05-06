@@ -320,28 +320,42 @@ const InboxPage: React.FC = () => {
   };
 
   const startRecording = async () => {
+    if (isRecording) { stopRecording(); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = e => chunks.push(e.data);
+      const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg' });
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunks, { type: mimeType });
+        if (blob.size < 100) { toast.error('Recording too short'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
         const url = URL.createObjectURL(blob);
-        sendMutation.mutate({ type: 'AUDIO', mediaUrl: url, mediaType: 'audio/webm', content: `🎙️ Voice message (${recordingTime}s)` });
+        const duration = recordingTime > 0 ? recordingTime : 1;
+        sendMutation.mutate({ type: 'AUDIO', mediaUrl: url, mediaType: mimeType, content: `🎙️ Voice message (${duration}s)` });
         stream.getTracks().forEach(t => t.stop());
         setRecordingTime(0);
       };
-      recorder.start();
+      recorder.start(100); // collect data every 100ms
       setMediaRecorder(recorder);
       setIsRecording(true);
+      toast('🎙️ Recording... Click mic again to stop', { duration: 2000 });
       let secs = 0;
-      recordingTimerRef.current = setInterval(() => { secs++; setRecordingTime(secs); if (secs >= 120) stopRecording(); }, 1000);
-    } catch { toast.error('Microphone permission denied'); }
+      recordingTimerRef.current = setInterval(() => {
+        secs++;
+        setRecordingTime(secs);
+        if (secs >= 120) stopRecording();
+      }, 1000);
+    } catch (err) {
+      toast.error('Microphone access denied. Please allow microphone in browser.');
+    }
   };
 
   const stopRecording = () => {
-    if (mediaRecorder) { mediaRecorder.stop(); setMediaRecorder(null); }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setMediaRecorder(null);
+    }
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
     setIsRecording(false);
   };
@@ -913,27 +927,31 @@ const InboxPage: React.FC = () => {
                 }
               </button>
 
-              {/* Send / Mic / Stop Recording */}
+              {/* Send / Mic */}
               {isRecording ? (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs font-mono text-red-400 animate-pulse">{recordingTime}s</span>
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-full" style={{ backgroundColor: '#2a3942' }}>
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-sm font-mono text-red-400">{recordingTime}s</span>
+                  </div>
                   <button onClick={stopRecording}
-                    className="w-11 h-11 rounded-full flex items-center justify-center animate-pulse"
-                    style={{ backgroundColor: '#ef4444' }}>
+                    className="w-11 h-11 rounded-full flex items-center justify-center shadow-lg"
+                    style={{ backgroundColor: '#ef4444' }}
+                    title="Stop and send">
                     <StopIcon className="w-5 h-5 text-white" />
                   </button>
                 </div>
               ) : message.trim() ? (
                 <button onClick={handleSend} disabled={sendMutation.isPending}
-                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-50 shadow-lg"
                   style={{ backgroundColor: '#25d366' }}>
                   <PaperAirplaneIcon className="w-5 h-5 text-white" />
                 </button>
               ) : (
-                <button onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording}
-                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+                <button onClick={startRecording}
+                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg"
                   style={{ backgroundColor: '#25d366' }}
-                  title="Hold to record voice message">
+                  title="Click to start recording voice message">
                   <MicrophoneIcon className="w-5 h-5 text-white" />
                 </button>
               )}
