@@ -72,10 +72,14 @@ async function main() {
 
   // Create sample tags
   const tagData = [
-    { name: 'VIP', color: '#f59e0b' },
-    { name: 'Hot Lead', color: '#ef4444' },
-    { name: 'Follow Up', color: '#3b82f6' },
-    { name: 'Newsletter', color: '#8b5cf6' },
+    { name: '🔥 Hot Lead',       color: '#ef4444' },
+    { name: '⭐ VIP',            color: '#f59e0b' },
+    { name: '✅ Interested',     color: '#22c55e' },
+    { name: '🔔 Follow-up',     color: '#3b82f6' },
+    { name: '❌ Not Interested', color: '#6b7280' },
+    { name: '💰 Paid Client',    color: '#8b5cf6' },
+    { name: '🆕 New Lead',       color: '#06b6d4' },
+    { name: '⏳ Pending',        color: '#f97316' },
   ];
   for (const tag of tagData) {
     await prisma.tag.upsert({

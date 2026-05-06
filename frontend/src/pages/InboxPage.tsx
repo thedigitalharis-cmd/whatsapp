@@ -154,7 +154,7 @@ const InboxPage: React.FC = () => {
   const [showAssign, setShowAssign] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(true);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [showSaveContact, setShowSaveContact] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
