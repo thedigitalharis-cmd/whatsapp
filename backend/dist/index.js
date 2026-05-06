@@ -45,6 +45,7 @@ const billing_1 = __importDefault(require("./routes/billing"));
 const teams_1 = __importDefault(require("./routes/teams"));
 const audit_1 = __importDefault(require("./routes/audit"));
 const settings_1 = __importDefault(require("./routes/settings"));
+const upload_1 = __importDefault(require("./routes/upload"));
 const followUps_1 = __importDefault(require("./routes/followUps"));
 const integrations_extended_1 = __importDefault(require("./routes/integrations-extended"));
 const followUpService_1 = require("./services/followUpService");
@@ -112,6 +113,10 @@ app.use('/api/qr-codes', auth_1.authMiddleware, qrCodes_1.default);
 app.use('/api/billing', auth_1.authMiddleware, billing_1.default);
 app.use('/api/audit', auth_1.authMiddleware, audit_1.default);
 app.use('/api/settings', auth_1.authMiddleware, settings_1.default);
+app.use('/api/upload', auth_1.authMiddleware, upload_1.default);
+// Serve uploaded files publicly
+const path_1 = __importDefault(require("path"));
+app.use('/uploads', require('express').static(path_1.default.join(process.cwd(), 'uploads')));
 app.use('/api/follow-ups', auth_1.authMiddleware, followUps_1.default);
 app.use('/api/integrations-extended', auth_1.authMiddleware, integrations_extended_1.default);
 // Socket.IO

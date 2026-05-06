@@ -42,6 +42,7 @@ import billingRoutes from './routes/billing';
 import teamRoutes from './routes/teams';
 import auditRoutes from './routes/audit';
 import settingsRoutes from './routes/settings';
+import uploadRoutes from './routes/upload';
 import followUpsRoutes from './routes/followUps';
 import integrationsExtendedRoutes from './routes/integrations-extended';
 import { startFollowUpScheduler } from './services/followUpService';
@@ -118,6 +119,11 @@ app.use('/api/qr-codes', authMiddleware, qrCodeRoutes);
 app.use('/api/billing', authMiddleware, billingRoutes);
 app.use('/api/audit', authMiddleware, auditRoutes);
 app.use('/api/settings', authMiddleware, settingsRoutes);
+app.use('/api/upload', authMiddleware, uploadRoutes);
+
+// Serve uploaded files publicly
+import path from 'path';
+app.use('/uploads', require('express').static(path.join(process.cwd(), 'uploads')));
 app.use('/api/follow-ups', authMiddleware, followUpsRoutes);
 app.use('/api/integrations-extended', authMiddleware, integrationsExtendedRoutes);
 

@@ -326,13 +326,37 @@ const InboxPage: React.FC = () => {
       const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg' });
       const chunks: BlobPart[] = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const mimeType = recorder.mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: mimeType });
-        if (blob.size < 100) { toast.error('Recording too short'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
-        const url = URL.createObjectURL(blob);
+        if (blob.size < 500) { toast.error('Recording too short — try again'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
         const duration = recordingTime > 0 ? recordingTime : 1;
-        sendMutation.mutate({ type: 'AUDIO', mediaUrl: url, mediaType: mimeType, content: `🎙️ Voice message (${duration}s)` });
+
+        // Upload audio to server to get a public URL
+        try {
+          const formData = new FormData();
+          formData.append('audio', blob, `voice_${Date.now()}.webm`);
+          const token = localStorage.getItem('token');
+          const uploadRes = await fetch(`${process.env.REACT_APP_API_URL}/upload/audio`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+
+          if (uploadRes.ok) {
+            const { url: publicUrl } = await uploadRes.json();
+            // Send as audio to WhatsApp via public URL
+            sendMutation.mutate({ type: 'AUDIO', mediaUrl: publicUrl, mediaType: 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
+          } else {
+            throw new Error('Upload failed');
+          }
+        } catch {
+          // Fallback: store locally and show as CRM note
+          const localUrl = URL.createObjectURL(blob);
+          // Add to conversation as internal note only (not sent to WhatsApp)
+          sendMutation.mutate({ type: 'TEXT', content: `🎙️ Voice message recorded (${duration}s) — saved in CRM only. To send voice to customer, use WhatsApp directly.` });
+          toast('Voice saved as note. For WhatsApp delivery, host audio on a public URL.', { duration: 5000 });
+        }
         stream.getTracks().forEach(t => t.stop());
         setRecordingTime(0);
       };
