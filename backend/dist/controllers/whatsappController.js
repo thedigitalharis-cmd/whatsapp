@@ -32,8 +32,12 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMediaUrl = exports.handleWebhook = exports.sendTemplateMessage = exports.sendWhatsAppMessage = exports.syncTemplates = exports.submitTemplateForApproval = exports.createTemplate = exports.getTemplates = exports.updateProfile = exports.getProfile = exports.verifyAccount = exports.deleteAccount = exports.updateAccount = exports.createAccount = exports.getAccounts = void 0;
+const axios_1 = __importDefault(require("axios"));
 const database_1 = require("../config/database");
 const logger_1 = require("../utils/logger");
 const wa = __importStar(require("../services/whatsappService"));
@@ -469,11 +473,37 @@ const handleWebhook = async (req, res) => {
                             case 'audio':
                             case 'voice':
                                 msgData.type = 'AUDIO';
-                                // Store media_id — we resolve to URL when displaying
-                                msgData.mediaUrl = msg.audio?.id
-                                    ? `https://betteraisender.com/api/whatsapp/media-proxy/${msg.audio.id}`
-                                    : null;
-                                msgData.mediaType = 'audio/ogg';
+                                // Download audio from Meta and save locally so it's always playable
+                                if (msg.audio?.id) {
+                                    try {
+                                        const path = require('path');
+                                        const fs = require('fs');
+                                        const uploadDir = path.join(process.cwd(), 'uploads');
+                                        if (!fs.existsSync(uploadDir))
+                                            fs.mkdirSync(uploadDir, { recursive: true });
+                                        // Get media URL from Meta
+                                        const mediaInfoResp = await axios_1.default.get(`https://graph.facebook.com/v19.0/${msg.audio.id}`, { headers: { Authorization: `Bearer ${account.accessToken}` } });
+                                        const mediaDownloadUrl = mediaInfoResp.data.url;
+                                        const mimeType = mediaInfoResp.data.mime_type || 'audio/ogg';
+                                        const ext = mimeType.includes('ogg') ? '.ogg' : mimeType.includes('mp4') ? '.mp4' : '.webm';
+                                        const filename = `recv_${Date.now()}_${msg.audio.id.slice(-8)}${ext}`;
+                                        const filePath = path.join(uploadDir, filename);
+                                        // Download the audio file
+                                        const audioResp = await axios_1.default.get(mediaDownloadUrl, {
+                                            headers: { Authorization: `Bearer ${account.accessToken}` },
+                                            responseType: 'arraybuffer',
+                                        });
+                                        fs.writeFileSync(filePath, audioResp.data);
+                                        msgData.mediaUrl = `https://betteraisender.com/uploads/${filename}`;
+                                        msgData.mediaType = mimeType;
+                                        logger_1.logger.info(`Audio saved: ${filename}`);
+                                    }
+                                    catch (audioErr) {
+                                        logger_1.logger.error(`Failed to download audio: ${audioErr.message}`);
+                                        msgData.mediaUrl = null;
+                                        msgData.mediaType = 'audio/ogg';
+                                    }
+                                }
                                 break;
                             case 'video':
                                 msgData.type = 'VIDEO';

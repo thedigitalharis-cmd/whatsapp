@@ -216,11 +216,11 @@ const sendMessage = async (req, res) => {
             waPayload = { type: 'document', document: { link: mediaUrl, filename: caption || 'file' } };
         }
         else if (type === 'AUDIO') {
-            // Use media_id if available (uploaded to Meta), otherwise use link
             if (mediaId) {
                 waPayload = { type: 'audio', audio: { id: mediaId } };
             }
-            else {
+            else if (mediaUrl) {
+                // WhatsApp accepts audio via public URL link
                 waPayload = { type: 'audio', audio: { link: mediaUrl } };
             }
         }

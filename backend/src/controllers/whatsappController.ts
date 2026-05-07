@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import axios from 'axios';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -471,11 +472,41 @@ export const handleWebhook = async (req: Request, res: Response) => {
               case 'audio':
               case 'voice':
                 msgData.type = 'AUDIO';
-                // Store media_id — we resolve to URL when displaying
-                msgData.mediaUrl = msg.audio?.id
-                  ? `https://betteraisender.com/api/whatsapp/media-proxy/${msg.audio.id}`
-                  : null;
-                msgData.mediaType = 'audio/ogg';
+                // Download audio from Meta and save locally so it's always playable
+                if (msg.audio?.id) {
+                  try {
+                    const path = require('path');
+                    const fs = require('fs');
+                    const uploadDir = path.join(process.cwd(), 'uploads');
+                    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+                    // Get media URL from Meta
+                    const mediaInfoResp = await axios.get(
+                      `https://graph.facebook.com/v19.0/${msg.audio.id}`,
+                      { headers: { Authorization: `Bearer ${account.accessToken}` } }
+                    );
+                    const mediaDownloadUrl = mediaInfoResp.data.url;
+                    const mimeType: string = mediaInfoResp.data.mime_type || 'audio/ogg';
+                    const ext = mimeType.includes('ogg') ? '.ogg' : mimeType.includes('mp4') ? '.mp4' : '.webm';
+                    const filename = `recv_${Date.now()}_${msg.audio.id.slice(-8)}${ext}`;
+                    const filePath = path.join(uploadDir, filename);
+
+                    // Download the audio file
+                    const audioResp = await axios.get(mediaDownloadUrl, {
+                      headers: { Authorization: `Bearer ${account.accessToken}` },
+                      responseType: 'arraybuffer',
+                    });
+                    fs.writeFileSync(filePath, audioResp.data);
+
+                    msgData.mediaUrl = `https://betteraisender.com/uploads/${filename}`;
+                    msgData.mediaType = mimeType;
+                    logger.info(`Audio saved: ${filename}`);
+                  } catch (audioErr: any) {
+                    logger.error(`Failed to download audio: ${audioErr.message}`);
+                    msgData.mediaUrl = null;
+                    msgData.mediaType = 'audio/ogg';
+                  }
+                }
                 break;
               case 'video':
                 msgData.type = 'VIDEO';

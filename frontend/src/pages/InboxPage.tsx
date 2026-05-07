@@ -353,12 +353,12 @@ const InboxPage: React.FC = () => {
         if (blob.size < 500) { toast.error('Recording too short — try again'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
         const duration = recordingTime > 0 ? recordingTime : 1;
 
-        // Upload audio → server converts to OGG → uploads to Meta → sends media_id
+        // Upload to server → get public URL → send link to WhatsApp
         try {
-          toast('📤 Sending voice message...', { duration: 3000 });
+          toast('📤 Uploading voice message...', { duration: 4000 });
           const formData = new FormData();
-          formData.append('audio', blob, `voice_${Date.now()}.webm`);
-          formData.append('conversationId', selectedConvId || '');
+          // Save as .ogg for better WhatsApp compatibility
+          formData.append('audio', blob, `voice_${Date.now()}.ogg`);
 
           const token = localStorage.getItem('token');
           const uploadRes = await fetch(`${process.env.REACT_APP_API_URL}/upload/audio`, {
@@ -367,34 +367,19 @@ const InboxPage: React.FC = () => {
             body: formData,
           });
 
-          if (uploadRes.ok) {
-            const result = await uploadRes.json();
-            // Store local blob URL so agent can listen to it in CRM
-            const localBlobUrl = URL.createObjectURL(blob);
-            if (result.mediaId) {
-              sendMutation.mutate({
-                type: 'AUDIO',
-                mediaId: result.mediaId,
-                mediaUrl: localBlobUrl,
-                mediaType: 'audio/ogg',
-                content: `🎙️ Voice message (${duration}s)`,
-              });
-              toast.success('✅ Voice message sent!');
-            } else if (result.url) {
-              sendMutation.mutate({
-                type: 'AUDIO',
-                mediaUrl: result.url,
-                mediaType: result.mimeType || 'audio/ogg',
-                content: `🎙️ Voice message (${duration}s)`,
-              });
-              toast.success('✅ Voice message sent!');
-            } else {
-              throw new Error(result.error || 'Upload failed');
-            }
-          } else {
+          if (!uploadRes.ok) {
             const err = await uploadRes.json().catch(() => ({}));
-            throw new Error(err.error || `Server error ${uploadRes.status}`);
+            throw new Error(err.error || `Upload failed (${uploadRes.status})`);
           }
+
+          const { url: publicUrl, mimeType } = await uploadRes.json();
+          // Send to WhatsApp via public URL — WhatsApp fetches audio from our server
+          sendMutation.mutate({
+            type: 'AUDIO',
+            mediaUrl: publicUrl,
+            mediaType: mimeType || 'audio/ogg',
+            content: `🎙️ Voice message (${duration}s)`,
+          });
         } catch (err: any) {
           toast.error(`Voice failed: ${err.message}`);
         }
