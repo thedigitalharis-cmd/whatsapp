@@ -172,10 +172,12 @@ systemctl enable betteraisender.service
 # ─── Deploy script ───────────────────────────────────────────────────────────
 cat > /usr/local/bin/crm-deploy << 'DEPLOY'
 #!/bin/bash
-# Quick deploy — run this after any code change
+# Quick deploy — avoids --no-cache (OOM on small VMs). Rebuild only when needed.
+set -e
 cd /opt/whatsapp-crm
 git pull origin main
-docker compose -f docker-compose.server.yml --env-file deploy/.env.production build --no-cache backend frontend && docker compose -f docker-compose.server.yml --env-file deploy/.env.production up -d --no-deps backend frontend && docker exec crm_nginx nginx -s reload 2>/dev/null || true
+docker compose -f docker-compose.server.yml --env-file deploy/.env.production up -d --build backend frontend
+docker exec crm_nginx nginx -s reload 2>/dev/null || true
 echo "✅ Deployed!"
 DEPLOY
 chmod +x /usr/local/bin/crm-deploy

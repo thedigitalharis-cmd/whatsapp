@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { publicBaseUrl } from '../utils/publicUrl';
 
 const router = Router();
 
@@ -27,8 +28,17 @@ router.post('/audio', upload.single('audio'), async (req: AuthRequest, res: Resp
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'betteraisender.com';
+    const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
+    const host =
+      (req.headers['x-forwarded-host'] as string) ||
+      req.headers.host ||
+      (() => {
+        try {
+          return new URL(publicBaseUrl()).host;
+        } catch {
+          return 'localhost';
+        }
+      })();
     const publicUrl = `${proto}://${host}/uploads/${req.file.filename}`;
 
     logger.info(`Audio saved: ${req.file.filename} (${req.file.size} bytes)`);

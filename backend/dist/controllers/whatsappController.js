@@ -40,6 +40,7 @@ exports.getMediaUrl = exports.handleWebhook = exports.sendTemplateMessage = expo
 const axios_1 = __importDefault(require("axios"));
 const database_1 = require("../config/database");
 const logger_1 = require("../utils/logger");
+const publicUrl_1 = require("../utils/publicUrl");
 const wa = __importStar(require("../services/whatsappService"));
 /** Trim and strip wrapping quotes — common mistake in .env files */
 function normalizeEnvSecret(s) {
@@ -599,7 +600,7 @@ const handleWebhook = async (req, res) => {
                                             responseType: 'arraybuffer',
                                         });
                                         fs.writeFileSync(filePath, audioResp.data);
-                                        msgData.mediaUrl = `https://betteraisender.com/uploads/${filename}`;
+                                        msgData.mediaUrl = `${(0, publicUrl_1.publicBaseUrl)()}/uploads/${filename}`;
                                         msgData.mediaType = mimeType;
                                         logger_1.logger.info(`Audio saved: ${filename}`);
                                     }

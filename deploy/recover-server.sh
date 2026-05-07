@@ -17,6 +17,11 @@ ENV_FILE="${ENV_FILE:-$APP_DIR/deploy/.env.production}"
 
 cd "$APP_DIR"
 
+# Minimal editor for .env on stock Ubuntu images (Cloud VMs often have no nano)
+if [[ "${EUID:-0}" -eq 0 ]] && ! command -v nano >/dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y -qq nano >/dev/null 2>&1 || true
+fi
+
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: Missing $ENV_FILE — create it first (see deploy/.env.production in repo)." >&2
   exit 1

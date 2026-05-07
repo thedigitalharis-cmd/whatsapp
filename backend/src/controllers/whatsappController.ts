@@ -4,6 +4,7 @@ import axios from 'axios';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { publicBaseUrl } from '../utils/publicUrl';
 import * as wa from '../services/whatsappService';
 
 /** Trim and strip wrapping quotes — common mistake in .env files */
@@ -630,7 +631,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
                     });
                     fs.writeFileSync(filePath, audioResp.data);
 
-                    msgData.mediaUrl = `https://betteraisender.com/uploads/${filename}`;
+                    msgData.mediaUrl = `${publicBaseUrl()}/uploads/${filename}`;
                     msgData.mediaType = mimeType;
                     logger.info(`Audio saved: ${filename}`);
                   } catch (audioErr: any) {

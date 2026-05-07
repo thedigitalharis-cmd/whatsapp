@@ -8,6 +8,7 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const logger_1 = require("../utils/logger");
+const publicUrl_1 = require("../utils/publicUrl");
 const router = (0, express_1.Router)();
 const uploadDir = path_1.default.join(process.cwd(), 'uploads');
 if (!fs_1.default.existsSync(uploadDir))
@@ -28,7 +29,16 @@ router.post('/audio', upload.single('audio'), async (req, res) => {
         if (!req.file)
             return res.status(400).json({ error: 'No file uploaded' });
         const proto = req.headers['x-forwarded-proto'] || 'https';
-        const host = req.headers['x-forwarded-host'] || req.headers.host || 'betteraisender.com';
+        const host = req.headers['x-forwarded-host'] ||
+            req.headers.host ||
+            (() => {
+                try {
+                    return new URL((0, publicUrl_1.publicBaseUrl)()).host;
+                }
+                catch {
+                    return 'localhost';
+                }
+            })();
         const publicUrl = `${proto}://${host}/uploads/${req.file.filename}`;
         logger_1.logger.info(`Audio saved: ${req.file.filename} (${req.file.size} bytes)`);
         // Return local URL — WhatsApp will fetch it when we send the message
