@@ -138,7 +138,7 @@ SMTP_PASS=your-app-password
 Then restart:
 ```bash
 cd /opt/whatsapp-crm
-docker compose -f docker-compose.prod.yml --env-file deploy/.env.production restart backend
+docker compose -f docker-compose.server.yml --env-file deploy/.env.production restart backend
 ```
 
 ---
@@ -147,16 +147,16 @@ docker compose -f docker-compose.prod.yml --env-file deploy/.env.production rest
 
 ```bash
 # View live logs
-docker compose -f /opt/whatsapp-crm/docker-compose.prod.yml logs -f backend
+docker compose -f /opt/whatsapp-crm/docker-compose.server.yml logs -f backend
 
 # Restart everything
-docker compose -f /opt/whatsapp-crm/docker-compose.prod.yml restart
+docker compose -f /opt/whatsapp-crm/docker-compose.server.yml restart
 
 # Deploy latest code manually
 crm-deploy
 
 # Check status
-docker compose -f /opt/whatsapp-crm/docker-compose.prod.yml ps
+docker compose -f /opt/whatsapp-crm/docker-compose.server.yml ps
 
 # Renew SSL (auto, but manual if needed)
 bash /opt/whatsapp-crm/deploy/renew-ssl.sh
