@@ -91,12 +91,12 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
             <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
               {playableAudioUrl ? (
-                <audio controls style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}>
-                  <source src={playableAudioUrl} type={message.mediaType || 'audio/ogg'} />
-                  <source src={playableAudioUrl} type="audio/ogg" />
-                  <source src={playableAudioUrl} type="audio/webm" />
-                  <source src={playableAudioUrl} type="audio/mpeg" />
-                </audio>
+                <audio
+                  controls
+                  preload="metadata"
+                  src={playableAudioUrl}
+                  style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}
+                />
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
                   {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (
