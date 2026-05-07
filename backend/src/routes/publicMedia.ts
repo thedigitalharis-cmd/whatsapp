@@ -55,32 +55,9 @@ router.get('/whatsapp/:mediaId', async (req, res) => {
       const ct = String(media.headers['content-type'] || 'audio/ogg').split(';')[0].trim() || 'audio/ogg';
 
       res.setHeader('Content-Type', ct);
+      res.setHeader('Content-Length', String(buf.length));
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-
-      const range = req.headers.range;
-      const rangeStr = typeof range === 'string' ? range.trim() : '';
-      if (rangeStr.startsWith('bytes=')) {
-        const m = rangeStr.slice('bytes='.length).split('-');
-        const start = Math.max(0, parseInt(m[0] || '0', 10) || 0);
-        let end =
-          m[1] !== undefined && m[1] !== ''
-            ? parseInt(m[1], 10)
-            : buf.length - 1;
-        if (Number.isNaN(end) || end >= buf.length) end = buf.length - 1;
-        if (start > end || start >= buf.length) {
-          res.status(416).setHeader('Content-Range', `bytes */${buf.length}`).end();
-          return;
-        }
-        const chunk = buf.subarray(start, end + 1);
-        res.status(206);
-        res.setHeader('Content-Length', String(chunk.length));
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${buf.length}`);
-        res.end(chunk);
-        return;
-      }
-
-      res.setHeader('Content-Length', String(buf.length));
       res.status(200).end(buf);
       return;
     } catch (error: any) {
