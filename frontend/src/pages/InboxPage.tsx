@@ -44,28 +44,38 @@ const channelIcons: Record<string, string> = {
   TELEGRAM: '✈️', EMAIL: '📧', SMS: '💬',
 };
 
-/** Media URLs must use the page origin (nginx proxies /media). REACT_APP_API_URL often still says localhost in prod builds. */
-function sameOriginBase(): string {
-  if (typeof window !== 'undefined') return window.location.origin;
-  return (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') || '';
-}
-
-/** Raw Meta id → /media/whatsapp/:id; same-host absolute URLs → path-only for consistent playback. */
+/**
+ * Playable URL for <audio>. Always same-origin relative paths for CRM-hosted assets so playback works even when
+ * the DB has a wrong absolute host (PUBLIC_URL=localhost, old IP, http vs https, etc.).
+ */
 function voiceAudioSrc(mediaUrl: string): string {
   const v = (mediaUrl || '').trim();
   if (!v) return '';
+
+  // Raw Meta media id → nginx proxies /media to backend
   if (!v.startsWith('http') && !v.startsWith('blob:')) {
-    return `${sameOriginBase()}/media/whatsapp/${encodeURIComponent(v)}`;
+    return `/media/whatsapp/${encodeURIComponent(v)}`;
   }
-  if (typeof window !== 'undefined') {
-    try {
-      const u = new URL(v);
-      if (u.origin === window.location.origin) return `${u.pathname}${u.search}`;
-    } catch {
-      /* ignore */
+
+  try {
+    const u = new URL(v);
+    if (u.pathname.startsWith('/uploads/') || u.pathname.startsWith('/media/')) {
+      return `${u.pathname}${u.search}`;
     }
+    if (typeof window !== 'undefined' && u.origin === window.location.origin) {
+      return `${u.pathname}${u.search}`;
+    }
+  } catch {
+    /* ignore */
   }
+
   return v;
+}
+
+function audioSourceType(mediaType: string | undefined): string | undefined {
+  const t = (mediaType || '').split(';')[0].trim().toLowerCase();
+  if (!t || t === 'application/octet-stream') return 'audio/ogg';
+  return t;
 }
 
 function conversationLastPreview(lastMsg: any | undefined): string {
@@ -102,6 +112,7 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
   const time = format(new Date(message.createdAt), 'HH:mm');
   const mediaUrl = message.mediaUrl || '';
   const playableAudioUrl = voiceAudioSrc(mediaUrl);
+  const audioType = audioSourceType(message.mediaType);
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
@@ -144,9 +155,10 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
                   controls
                   preload="metadata"
                   playsInline
-                  src={playableAudioUrl}
                   style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}
-                />
+                >
+                  <source src={playableAudioUrl} type={audioType} />
+                </audio>
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
                   {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (

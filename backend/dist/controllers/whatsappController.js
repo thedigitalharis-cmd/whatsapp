@@ -40,7 +40,6 @@ exports.getMediaUrl = exports.handleWebhook = exports.sendTemplateMessage = expo
 const axios_1 = __importDefault(require("axios"));
 const database_1 = require("../config/database");
 const logger_1 = require("../utils/logger");
-const publicUrl_1 = require("../utils/publicUrl");
 const wa = __importStar(require("../services/whatsappService"));
 /** Trim and strip wrapping quotes — common mistake in .env files */
 function normalizeEnvSecret(s) {
@@ -125,7 +124,8 @@ async function downloadInboundCustomerAudio(msgAudio, accessToken) {
         const filePath = pathMod.join(uploadDir, filename);
         fsMod.writeFileSync(filePath, buf);
         logger_1.logger.info(`Inbound audio saved: ${filename} (${buf.length} bytes)`);
-        return { mediaUrl: `${(0, publicUrl_1.publicBaseUrl)()}/uploads/${filename}`, mediaType: msgAudio.mime_type || mimeType };
+        // Relative path — inbox loads via same origin as CRM (avoids broken playback when PUBLIC_URL/IP/host mismatches).
+        return { mediaUrl: `/uploads/${filename}`, mediaType: msgAudio.mime_type || mimeType };
     }
     catch (e) {
         logger_1.logger.error(`Inbound audio save failed: ${e.message}`);

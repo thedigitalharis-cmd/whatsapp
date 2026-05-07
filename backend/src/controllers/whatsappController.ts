@@ -4,7 +4,6 @@ import axios from 'axios';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
-import { publicBaseUrl } from '../utils/publicUrl';
 import * as wa from '../services/whatsappService';
 
 /** Trim and strip wrapping quotes — common mistake in .env files */
@@ -92,7 +91,8 @@ async function downloadInboundCustomerAudio(
     const filePath = pathMod.join(uploadDir, filename);
     fsMod.writeFileSync(filePath, buf);
     logger.info(`Inbound audio saved: ${filename} (${buf.length} bytes)`);
-    return { mediaUrl: `${publicBaseUrl()}/uploads/${filename}`, mediaType: msgAudio.mime_type || mimeType };
+    // Relative path — inbox loads via same origin as CRM (avoids broken playback when PUBLIC_URL/IP/host mismatches).
+    return { mediaUrl: `/uploads/${filename}`, mediaType: msgAudio.mime_type || mimeType };
   } catch (e: any) {
     logger.error(`Inbound audio save failed: ${e.message}`);
     if (msgAudio.id) return { mediaUrl: String(msgAudio.id), mediaType: mimeType };
