@@ -313,12 +313,23 @@ const InboxPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Always listen for inbound messages while on Inbox (listener was only attached when a chat was open)
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (payload: any) => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      const convId = payload?.conversationId ?? payload?.message?.conversationId;
+      if (selectedConvId && convId === selectedConvId) {
+        refetchMessages();
+      }
+    };
+    socket.on('message:new', handler);
+    return () => { socket.off('message:new', handler); };
+  }, [socket, selectedConvId, qc, refetchMessages]);
+
   useEffect(() => {
     if (socket && selectedConvId) {
       socket.emit('join:conversation', selectedConvId);
-      const handler = () => { refetchMessages(); qc.invalidateQueries({ queryKey: ['conversations'] }); };
-      socket.on('message:new', handler);
-      return () => { socket.off('message:new', handler); };
     }
   }, [socket, selectedConvId]);
 

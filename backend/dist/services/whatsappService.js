@@ -284,11 +284,15 @@ async function getPhoneQuality(phoneNumberId, accessToken) {
 // ─── Webhook signature validation ────────────────────────────────────────
 function validateWebhookSignature(rawBody, signature, appSecret) {
     try {
+        const secret = String(appSecret || '').trim();
+        if (!secret || !signature || !rawBody)
+            return false;
         const expected = 'sha256=' + crypto_1.default
-            .createHmac('sha256', appSecret)
-            .update(rawBody)
+            .createHmac('sha256', secret)
+            .update(rawBody, 'utf8')
             .digest('hex');
-        return crypto_1.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+        const sig = String(signature).trim();
+        return crypto_1.default.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
     }
     catch {
         return false;

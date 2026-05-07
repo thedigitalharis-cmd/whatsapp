@@ -353,26 +353,30 @@ const handleWebhook = async (req, res) => {
             return res.status(403).json({ error: 'Verification failed' });
         }
         // POST: incoming events — validate signature if app secret is set (must use raw body from express.json verify)
-        if (process.env.WHATSAPP_APP_SECRET) {
+        const appSecret = process.env.WHATSAPP_APP_SECRET?.trim();
+        if (appSecret) {
             const sig = req.headers['x-hub-signature-256'] || '';
             const rawBody = req.rawBody;
             if (!rawBody) {
                 logger_1.logger.warn('Webhook: rawBody missing — cannot verify signature');
                 return res.sendStatus(401);
             }
-            if (!wa.validateWebhookSignature(rawBody, sig, process.env.WHATSAPP_APP_SECRET)) {
-                logger_1.logger.warn('Invalid webhook signature');
+            if (!wa.validateWebhookSignature(rawBody, sig, appSecret)) {
+                logger_1.logger.warn('Invalid webhook signature (check WHATSAPP_APP_SECRET matches Meta App Secret exactly)');
                 return res.sendStatus(401);
             }
         }
         const body = req.body;
-        if (body.object !== 'whatsapp_business_account')
+        if (body.object !== 'whatsapp_business_account') {
+            logger_1.logger.warn(`Webhook POST ignored: object=${body?.object ?? 'undefined'}`);
             return res.sendStatus(200);
+        }
         for (const entry of body.entry || []) {
             for (const change of entry.changes || []) {
-                if (change.field !== 'messages')
+                const field = String(change.field || '').trim();
+                if (field !== 'messages')
                     continue;
-                const value = change.value;
+                const value = change.value || {};
                 // ── Status updates ──────────────────────────────────────────────
                 if (value.statuses) {
                     for (const status of value.statuses) {
@@ -399,11 +403,39 @@ const handleWebhook = async (req, res) => {
                 // ── Incoming messages ───────────────────────────────────────────
                 if (value.messages) {
                     const metaPhoneId = String(value.metadata?.phone_number_id ?? '').trim();
-                    const account = await database_1.prisma.whatsAppAccount.findFirst({
-                        where: { phoneNumberId: metaPhoneId },
-                    });
+                    let account = metaPhoneId
+                        ? await database_1.prisma.whatsAppAccount.findFirst({ where: { phoneNumberId: metaPhoneId } })
+                        : null;
+                    // Fallback: match CRM row by display phone if Phone Number ID was pasted wrong but sends still work
+                    if (!account && value.metadata?.display_phone_number) {
+                        const displayDigits = String(value.metadata.display_phone_number).replace(/\D/g, '');
+                        if (displayDigits) {
+                            const candidates = await database_1.prisma.whatsAppAccount.findMany({
+                                where: { status: { in: ['ACTIVE', 'PENDING'] } },
+                            });
+                            account =
+                                candidates.find((c) => {
+                                    const stored = String(c.phoneNumber || '').replace(/\D/g, '');
+                                    return stored === displayDigits || stored.endsWith(displayDigits) || displayDigits.endsWith(stored);
+                                }) || null;
+                            if (account) {
+                                logger_1.logger.warn(`Webhook: matched account by display_phone_number=${displayDigits} (DB phone_number_id was ${account.phoneNumberId}, Meta sent ${metaPhoneId}) — update Phone number ID in CRM`);
+                                if (metaPhoneId && account.phoneNumberId !== metaPhoneId) {
+                                    try {
+                                        await database_1.prisma.whatsAppAccount.update({
+                                            where: { id: account.id },
+                                            data: { phoneNumberId: metaPhoneId },
+                                        });
+                                    }
+                                    catch (e) {
+                                        logger_1.logger.warn(`Webhook: could not sync phoneNumberId: ${e.message}`);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (!account) {
-                        logger_1.logger.warn(`Webhook: no WhatsAppAccount for phone_number_id=${metaPhoneId} — add/verify account in CRM or fix Meta webhook phone`);
+                        logger_1.logger.warn(`Webhook: no WhatsAppAccount for phone_number_id=${metaPhoneId} display=${value.metadata?.display_phone_number} — fix CRM WhatsApp account or Meta subscription`);
                         continue;
                     }
                     for (const msg of value.messages) {

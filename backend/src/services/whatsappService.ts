@@ -340,11 +340,14 @@ export function validateWebhookSignature(
   appSecret: string
 ): boolean {
   try {
+    const secret = String(appSecret || '').trim();
+    if (!secret || !signature || !rawBody) return false;
     const expected = 'sha256=' + crypto
-      .createHmac('sha256', appSecret)
-      .update(rawBody)
+      .createHmac('sha256', secret)
+      .update(rawBody, 'utf8')
       .digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const sig = String(signature).trim();
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
   } catch {
     return false;
   }
