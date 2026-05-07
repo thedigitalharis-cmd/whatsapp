@@ -1,13 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addNote = exports.sendMessage = exports.getMessages = exports.toggleBot = exports.deleteConversation = exports.unarchiveConversation = exports.archiveConversation = exports.updateConversationStatus = exports.assignConversation = exports.getConversation = exports.getConversations = void 0;
+exports.addNote = exports.sendMessage = exports.deleteMessageForEveryone = exports.deleteMessageForMe = exports.getMessages = exports.toggleBot = exports.deleteConversation = exports.unarchiveConversation = exports.archiveConversation = exports.updateConversationStatus = exports.assignConversation = exports.getConversation = exports.getConversations = void 0;
 const database_1 = require("../config/database");
 const whatsappController_1 = require("./whatsappController");
 const logger_1 = require("../utils/logger");
+/** Messages visible to this agent (excludes "delete for me"). */
+function hiddenForUserWhere(userId) {
+    return { hides: { none: { userId } } };
+}
 const getConversations = async (req, res) => {
     try {
         const { page = 1, limit = 50, status, channel, assigneeId, teamId, search, priority, archived } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
+        const uid = req.user.id;
         // Default: show non-archived; if archived=true show only archived
         const where = {
             organizationId: req.user.organizationId,
@@ -38,7 +43,11 @@ const getConversations = async (req, res) => {
                     agent: { select: { id: true, firstName: true, lastName: true, avatar: true } },
                     team: { select: { id: true, name: true } },
                     tags: true,
-                    messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+                    messages: {
+                        where: hiddenForUserWhere(uid),
+                        orderBy: { createdAt: 'desc' },
+                        take: 1,
+                    },
                 },
                 orderBy: { lastMessageAt: 'desc' },
             }),
@@ -177,16 +186,28 @@ const toggleBot = async (req, res) => {
 exports.toggleBot = toggleBot;
 const getMessages = async (req, res) => {
     try {
+        const convOk = await database_1.prisma.conversation.findFirst({
+            where: { id: req.params.id, organizationId: req.user.organizationId },
+            select: { id: true },
+        });
+        if (!convOk)
+            return res.status(404).json({ error: 'Conversation not found' });
         const { page = 1, limit = 50 } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
+        const uid = req.user.id;
+        const convWhere = {
+            conversationId: req.params.id,
+            ...hiddenForUserWhere(uid),
+        };
         const [messages, total] = await Promise.all([
             database_1.prisma.message.findMany({
-                where: { conversationId: req.params.id },
-                skip, take: Number(limit),
+                where: convWhere,
+                skip,
+                take: Number(limit),
                 include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
                 orderBy: { createdAt: 'asc' },
             }),
-            database_1.prisma.message.count({ where: { conversationId: req.params.id } }),
+            database_1.prisma.message.count({ where: convWhere }),
         ]);
         res.json({ data: messages, total });
     }
@@ -195,6 +216,95 @@ const getMessages = async (req, res) => {
     }
 };
 exports.getMessages = getMessages;
+/** Hide message only for the current agent (CRM inbox). */
+const deleteMessageForMe = async (req, res) => {
+    try {
+        const conversationId = req.params.id;
+        const messageId = req.params.messageId;
+        const userId = req.user.id;
+        const conv = await database_1.prisma.conversation.findFirst({
+            where: { id: conversationId, organizationId: req.user.organizationId },
+        });
+        if (!conv)
+            return res.status(404).json({ error: 'Conversation not found' });
+        const msg = await database_1.prisma.message.findFirst({
+            where: { id: messageId, conversationId },
+        });
+        if (!msg)
+            return res.status(404).json({ error: 'Message not found' });
+        const existing = await database_1.prisma.messageUserHide.findUnique({
+            where: { userId_messageId: { userId, messageId } },
+        });
+        if (!existing) {
+            await database_1.prisma.messageUserHide.create({ data: { userId, messageId } });
+        }
+        const io = req.app.get('io');
+        io?.to(`org:${req.user.organizationId}`).emit('conversation:updated', { id: conversationId });
+        res.json({ ok: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.deleteMessageForMe = deleteMessageForMe;
+/** Remove message content for all agents in this CRM (WhatsApp consumer "delete for everyone" is not available on Cloud API). */
+const deleteMessageForEveryone = async (req, res) => {
+    try {
+        const conversationId = req.params.id;
+        const messageId = req.params.messageId;
+        const orgId = req.user.organizationId;
+        const conv = await database_1.prisma.conversation.findFirst({
+            where: { id: conversationId, organizationId: orgId },
+        });
+        if (!conv)
+            return res.status(404).json({ error: 'Conversation not found' });
+        const msg = await database_1.prisma.message.findFirst({
+            where: { id: messageId, conversationId },
+        });
+        if (!msg)
+            return res.status(404).json({ error: 'Message not found' });
+        const updated = await database_1.prisma.$transaction(async (tx) => {
+            await tx.messageUserHide.deleteMany({ where: { messageId } });
+            await tx.message.update({
+                where: { id: messageId },
+                data: {
+                    isDeleted: true,
+                    deletedAt: new Date(),
+                    deletedByUserId: req.user.id,
+                    content: null,
+                    mediaUrl: null,
+                    mediaType: null,
+                    mediaSize: null,
+                    caption: null,
+                    location: null,
+                    contacts: null,
+                    interactive: null,
+                    template: null,
+                    reaction: null,
+                    replyToId: null,
+                    translatedText: null,
+                    errorCode: null,
+                    errorMessage: null,
+                },
+            });
+            return tx.message.findUnique({
+                where: { id: messageId },
+                include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
+            });
+        });
+        const io = req.app.get('io');
+        io?.to(`conv:${conversationId}`).emit('message:updated', {
+            conversationId,
+            message: updated,
+        });
+        io?.to(`org:${orgId}`).emit('conversation:updated', { id: conversationId });
+        res.json(updated);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.deleteMessageForEveryone = deleteMessageForEveryone;
 const sendMessage = async (req, res) => {
     try {
         const { type = 'TEXT', content, mediaUrl, mediaType, mediaId, caption, interactive, template, replyToId } = req.body;

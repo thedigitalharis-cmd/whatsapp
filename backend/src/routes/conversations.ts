@@ -3,6 +3,7 @@ import {
   getConversations, getConversation, assignConversation, updateConversationStatus,
   toggleBot, getMessages, sendMessage, addNote,
   archiveConversation, unarchiveConversation, deleteConversation,
+  deleteMessageForMe, deleteMessageForEveryone,
 } from '../controllers/conversationController';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
@@ -17,6 +18,8 @@ router.patch('/:id/archive', archiveConversation);
 router.patch('/:id/unarchive', unarchiveConversation);
 router.delete('/:id', deleteConversation);
 router.patch('/:id/bot', toggleBot);
+router.post('/:id/messages/:messageId/delete-for-me', deleteMessageForMe);
+router.post('/:id/messages/:messageId/delete-for-everyone', deleteMessageForEveryone);
 router.get('/:id/messages', getMessages);
 router.post('/:id/messages', sendMessage);
 router.post('/:id/notes', addNote);

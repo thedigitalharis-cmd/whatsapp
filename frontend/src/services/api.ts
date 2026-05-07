@@ -106,6 +106,10 @@ export const conversationsApi = {
   toggleBot: (id: string, botPaused: boolean) => api.patch(`/conversations/${id}/bot`, { botPaused }),
   messages: (id: string, params?: any) => api.get(`/conversations/${id}/messages`, { params }),
   sendMessage: (id: string, data: any) => api.post(`/conversations/${id}/messages`, data),
+  deleteMessageForMe: (conversationId: string, messageId: string) =>
+    api.post(`/conversations/${conversationId}/messages/${messageId}/delete-for-me`),
+  deleteMessageForEveryone: (conversationId: string, messageId: string) =>
+    api.post(`/conversations/${conversationId}/messages/${messageId}/delete-for-everyone`),
   addNote: (id: string, content: string) => api.post(`/conversations/${id}/notes`, { content }),
 };
 

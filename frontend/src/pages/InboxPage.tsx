@@ -80,6 +80,7 @@ function audioSourceType(mediaType: string | undefined): string | undefined {
 
 function conversationLastPreview(lastMsg: any | undefined): string {
   if (!lastMsg) return 'No messages yet';
+  if (lastMsg.isDeleted || lastMsg.deletedAt) return 'Message deleted';
   const text = typeof lastMsg.content === 'string' ? lastMsg.content.trim() : '';
   if (text) return text;
   const t = lastMsg.type as string | undefined;
@@ -107,9 +108,76 @@ function conversationLastPreview(lastMsg: any | undefined): string {
 }
 
 // ─── Message Bubble ──────────────────────────────────────────────────────────
-const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, bgDark }) => {
+const MessageBubble: React.FC<{
+  message: any;
+  bgDark?: boolean;
+  conversationId?: string | null;
+  onMessagesChanged?: () => void;
+}> = ({ message, bgDark, conversationId, onMessagesChanged }) => {
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const msgMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (msgMenuRef.current && !msgMenuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
+
+  const handleDeleteForMe = async () => {
+    if (!conversationId) return;
+    try {
+      await conversationsApi.deleteMessageForMe(conversationId, message.id);
+      toast.success('Deleted for you');
+      setMenuOpen(false);
+      onMessagesChanged?.();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not delete message');
+    }
+  };
+
+  const handleDeleteForEveryone = async () => {
+    if (!conversationId) return;
+    if (
+      !window.confirm(
+        'Delete for everyone? This removes the message from the CRM for all agents. It does not delete it from the customer WhatsApp chat (Cloud API limitation).'
+      )
+    ) {
+      return;
+    }
+    try {
+      await conversationsApi.deleteMessageForEveryone(conversationId, message.id);
+      toast.success('Message deleted for everyone in CRM');
+      setMenuOpen(false);
+      onMessagesChanged?.();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not delete message');
+    }
+  };
+
+  if (message.isDeleted || message.deletedAt) {
+    return (
+      <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
+        <div
+          className={`rounded-xl px-3 py-2 shadow-sm max-w-xs lg:max-w-sm ${
+            isOut ? 'bg-[#d9fdd3]/70 rounded-tr-none' : bgDark ? 'bg-[#2a3942] rounded-tl-none' : 'bg-gray-100 rounded-tl-none'
+          }`}
+        >
+          <p className={`text-xs italic ${isOut ? 'text-[#667781]' : bgDark ? 'text-[#8696a0]' : 'text-gray-500'}`}>
+            This message was deleted
+          </p>
+          <div className={`flex justify-end mt-0.5`}>
+            <span className={`text-[11px] ${isOut ? 'text-[#667781]' : bgDark ? 'text-[#8696a0]' : 'text-[#667781]'}`}>{time}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const mediaUrl = message.mediaUrl || '';
   const playableAudioUrl = voiceAudioSrc(mediaUrl);
   const audioType = audioSourceType(message.mediaType);
@@ -197,7 +265,7 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
           </div>
         )}
 
-        {/* Time + Status */}
+        {/* Time + Status + delete menu */}
         <div className={`flex items-center justify-end gap-1 mt-0.5`}>
           <span className={`text-xs ${isOut ? 'text-[#667781]' : bgDark ? 'text-[#8696a0]' : 'text-[#667781]'}`} style={{ fontSize: '11px' }}>
             {time}
@@ -207,6 +275,43 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
               : message.status === 'DELIVERED' ? <span className="text-[#8696a0]" style={{ fontSize: '13px' }}>✓✓</span>
                 : message.status === 'FAILED' ? <XCircleIcon className="w-3 h-3 text-red-400" />
                   : <span className="text-[#8696a0]" style={{ fontSize: '13px' }}>✓</span>
+          )}
+          {conversationId && (
+            <div className="relative flex-shrink-0" ref={msgMenuRef}>
+              <button
+                type="button"
+                className={`p-0.5 rounded hover:bg-black/5 ${bgDark ? 'hover:bg-white/10' : ''}`}
+                aria-label="Message options"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen((v) => !v);
+                }}
+              >
+                <EllipsisVerticalIcon className={`w-3.5 h-3.5 ${isOut ? 'text-[#667781]' : bgDark ? 'text-[#8696a0]' : 'text-[#667781]'}`} />
+              </button>
+              {menuOpen && (
+                <div
+                  className="absolute bottom-full right-0 mb-1 z-[60] min-w-[210px] rounded-xl shadow-2xl py-1 overflow-hidden border"
+                  style={{ backgroundColor: '#233138', borderColor: '#2a3942' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-white/5 text-[#e9edef]"
+                    onClick={handleDeleteForMe}
+                  >
+                    Delete for me
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-white/5 text-[#e9edef]"
+                    onClick={handleDeleteForEveryone}
+                  >
+                    Delete for everyone
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -396,7 +501,16 @@ const InboxPage: React.FC = () => {
       }
     };
     socket.on('message:new', handler);
-    return () => { socket.off('message:new', handler); };
+    const onUpdated = (payload: any) => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      const convId = payload?.conversationId;
+      if (selectedConvId && convId === selectedConvId) refetchMessages();
+    };
+    socket.on('message:updated', onUpdated);
+    return () => {
+      socket.off('message:new', handler);
+      socket.off('message:updated', onUpdated);
+    };
   }, [socket, selectedConvId, qc, refetchMessages]);
 
   useEffect(() => {
@@ -985,7 +1099,18 @@ const InboxPage: React.FC = () => {
             {Object.entries(groupedMessages).map(([date, msgs]: [string, any]) => (
               <div key={date}>
                 <DateSeparator date={date} bgDark={isDarkBg} />
-                {msgs.map((msg: any) => <MessageBubble key={msg.id} message={msg} bgDark={isDarkBg} />)}
+                {msgs.map((msg: any) => (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    bgDark={isDarkBg}
+                    conversationId={selectedConvId}
+                    onMessagesChanged={() => {
+                      refetchMessages();
+                      qc.invalidateQueries({ queryKey: ['conversations'] });
+                    }}
+                  />
+                ))}
               </div>
             ))}
             <div ref={messagesEndRef} />

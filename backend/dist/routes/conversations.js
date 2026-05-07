@@ -12,6 +12,8 @@ router.patch('/:id/archive', conversationController_1.archiveConversation);
 router.patch('/:id/unarchive', conversationController_1.unarchiveConversation);
 router.delete('/:id', conversationController_1.deleteConversation);
 router.patch('/:id/bot', conversationController_1.toggleBot);
+router.post('/:id/messages/:messageId/delete-for-me', conversationController_1.deleteMessageForMe);
+router.post('/:id/messages/:messageId/delete-for-everyone', conversationController_1.deleteMessageForEveryone);
 router.get('/:id/messages', conversationController_1.getMessages);
 router.post('/:id/messages', conversationController_1.sendMessage);
 router.post('/:id/notes', conversationController_1.addNote);
