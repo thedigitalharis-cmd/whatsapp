@@ -41,6 +41,17 @@ const axios_1 = __importDefault(require("axios"));
 const database_1 = require("../config/database");
 const logger_1 = require("../utils/logger");
 const wa = __importStar(require("../services/whatsappService"));
+/** Trim and strip wrapping quotes — common mistake in .env files */
+function normalizeEnvSecret(s) {
+    if (s == null)
+        return '';
+    let t = String(s).trim();
+    if (t.length >= 2 &&
+        ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
+        t = t.slice(1, -1).trim();
+    }
+    return t;
+}
 // ─── Accounts ─────────────────────────────────────────────────────────────
 const getAccounts = async (req, res) => {
     try {
@@ -341,20 +352,31 @@ exports.sendTemplateMessage = sendTemplateMessage;
 // ─── Webhook ──────────────────────────────────────────────────────────────
 const handleWebhook = async (req, res) => {
     try {
-        // GET: verification handshake
+        // GET: Meta verification handshake — opening /webhook/whatsapp in a browser has no query params (not an error)
         if (req.method === 'GET') {
             const mode = req.query['hub.mode'];
             const token = req.query['hub.verify_token'];
             const challenge = req.query['hub.challenge'];
-            const verifyTok = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim();
-            if (mode === 'subscribe' && token === verifyTok) {
-                logger_1.logger.info('WhatsApp webhook verified');
-                return res.status(200).send(challenge);
+            if ((mode === undefined || mode === '') &&
+                (token === undefined || token === '') &&
+                (challenge === undefined || challenge === '')) {
+                return res
+                    .status(200)
+                    .type('text/plain')
+                    .send('OK — WhatsApp webhook URL is reachable.\n' +
+                    'Meta verifies with GET ?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...\n' +
+                    'If inbound messages fail: set WHATSAPP_APP_SECRET in deploy/.env.production to the exact App Secret from developers.facebook.com → App settings → Basic → App secret (or leave WHATSAPP_APP_SECRET empty to disable signature check while testing).');
             }
+            const verifyTok = normalizeEnvSecret(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN);
+            if (mode === 'subscribe' && token === verifyTok && challenge != null && challenge !== '') {
+                logger_1.logger.info('WhatsApp webhook verified');
+                return res.status(200).send(String(challenge));
+            }
+            logger_1.logger.warn('Webhook GET verification failed — check WHATSAPP_WEBHOOK_VERIFY_TOKEN matches Meta “Verify token” field');
             return res.status(403).json({ error: 'Verification failed' });
         }
         // POST: incoming events — validate signature if app secret is set (must use raw body from express.json verify)
-        const appSecret = process.env.WHATSAPP_APP_SECRET?.trim();
+        const appSecret = normalizeEnvSecret(process.env.WHATSAPP_APP_SECRET);
         if (appSecret) {
             const sig = req.headers['x-hub-signature-256'] || '';
             const rawBody = req.rawBody;
@@ -363,7 +385,7 @@ const handleWebhook = async (req, res) => {
                 return res.sendStatus(401);
             }
             if (!wa.validateWebhookSignature(rawBody, sig, appSecret)) {
-                logger_1.logger.warn('Invalid webhook signature (check WHATSAPP_APP_SECRET matches Meta App Secret exactly)');
+                logger_1.logger.warn('Invalid webhook signature — WHATSAPP_APP_SECRET must match Meta App Secret exactly (App settings → Basic), or remove WHATSAPP_APP_SECRET from .env to disable this check for testing');
                 return res.sendStatus(401);
             }
         }
