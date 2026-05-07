@@ -243,9 +243,15 @@ const InboxPage: React.FC = () => {
   const { data: contactGroups } = useQuery({ queryKey: ['contact-groups'], queryFn: () => api.get('/contacts/groups').then(r => r.data) });
 
   const sendMutation = useMutation({
-    mutationFn: (data: any) => conversationsApi.sendMessage(selectedConvId!, data),
-    onSuccess: () => { setMessage(''); refetchMessages(); qc.invalidateQueries({ queryKey: ['conversations'] }); },
-    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to send'),
+    mutationFn: (data: any) => conversationsApi.sendMessage(selectedConvId!, data).then(r => r.data),
+    onSuccess: (data: any) => {
+      setMessage('');
+      refetchMessages();
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      if (data?.warning) toast.error(String(data.warning));
+      else if (data?.status === 'FAILED' && data?.errorMessage) toast.error(data.errorMessage);
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || e.response?.data?.warning || 'Failed to send'),
   });
   const statusMutation = useMutation({
     mutationFn: (status: string) => conversationsApi.updateStatus(selectedConvId!, status),
