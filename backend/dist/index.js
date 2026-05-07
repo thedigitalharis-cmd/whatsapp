@@ -46,6 +46,7 @@ const teams_1 = __importDefault(require("./routes/teams"));
 const audit_1 = __importDefault(require("./routes/audit"));
 const settings_1 = __importDefault(require("./routes/settings"));
 const upload_1 = __importDefault(require("./routes/upload"));
+const publicMedia_1 = __importDefault(require("./routes/publicMedia"));
 const followUps_1 = __importDefault(require("./routes/followUps"));
 const integrations_extended_1 = __importDefault(require("./routes/integrations-extended"));
 const followUpService_1 = require("./services/followUpService");
@@ -83,6 +84,8 @@ app.get('/health', (req, res) => {
 });
 // WhatsApp webhook (public)
 app.use('/webhook', webhooks_1.default);
+// Public media proxy (needed for <audio>/<video> playback without auth headers)
+app.use('/media', publicMedia_1.default);
 // Auth routes (public)
 app.use('/api/auth', auth_2.default);
 // Protected routes

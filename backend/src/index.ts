@@ -43,6 +43,7 @@ import teamRoutes from './routes/teams';
 import auditRoutes from './routes/audit';
 import settingsRoutes from './routes/settings';
 import uploadRoutes from './routes/upload';
+import publicMediaRoutes from './routes/publicMedia';
 import followUpsRoutes from './routes/followUps';
 import integrationsExtendedRoutes from './routes/integrations-extended';
 import { startFollowUpScheduler } from './services/followUpService';
@@ -87,6 +88,9 @@ app.get('/health', (req, res) => {
 
 // WhatsApp webhook (public)
 app.use('/webhook', webhookRoutes);
+
+// Public media proxy (needed for <audio>/<video> playback without auth headers)
+app.use('/media', publicMediaRoutes);
 
 // Auth routes (public)
 app.use('/api/auth', authRoutes);

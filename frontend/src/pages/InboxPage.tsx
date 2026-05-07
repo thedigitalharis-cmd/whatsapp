@@ -48,6 +48,12 @@ const channelIcons: Record<string, string> = {
 const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, bgDark }) => {
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
+  const mediaUrl = message.mediaUrl || '';
+  const appBaseUrl = (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '');
+  const isRawMetaMediaId = mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('blob:');
+  const playableAudioUrl = isRawMetaMediaId
+    ? `${appBaseUrl}/media/whatsapp/${mediaUrl}`
+    : mediaUrl;
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
@@ -80,15 +86,16 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
             <span className={`text-xs truncate ${bgDark && !isOut ? 'text-gray-200' : 'text-gray-700'}`}>{message.caption || 'Document'}</span>
           </div>
         )}
-        {message.type === 'AUDIO' && (
+        {(message.type === 'AUDIO' || message.type === 'VOICE') && (
           <div className="mb-1 min-w-[200px]">
             <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
-              {message.mediaUrl ? (
+              {playableAudioUrl ? (
                 <audio controls style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}>
-                  <source src={message.mediaUrl} type="audio/ogg" />
-                  <source src={message.mediaUrl} type="audio/webm" />
-                  <source src={message.mediaUrl} type="audio/mpeg" />
+                  <source src={playableAudioUrl} type={message.mediaType || 'audio/ogg'} />
+                  <source src={playableAudioUrl} type="audio/ogg" />
+                  <source src={playableAudioUrl} type="audio/webm" />
+                  <source src={playableAudioUrl} type="audio/mpeg" />
                 </audio>
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
