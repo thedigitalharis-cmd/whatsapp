@@ -44,6 +44,65 @@ const channelIcons: Record<string, string> = {
   TELEGRAM: '✈️', EMAIL: '📧', SMS: '💬',
 };
 
+function formatAudioDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds === Infinity) return '';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** WhatsApp sends Opus-in-OGG; browsers often show 0:00 until metadata loads — use preload=auto for inbound + explicit MIME. */
+const VoiceNotePlayer: React.FC<{ src: string; mediaType?: string | null; inbound: boolean }> = ({
+  src,
+  mediaType,
+  inbound,
+}) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  const [durationText, setDurationText] = useState('');
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const sync = () => {
+      const d = el.duration;
+      setDurationText(formatAudioDuration(d));
+    };
+    el.addEventListener('loadedmetadata', sync);
+    el.addEventListener('durationchange', sync);
+    el.addEventListener('canplaythrough', sync);
+    return () => {
+      el.removeEventListener('loadedmetadata', sync);
+      el.removeEventListener('durationchange', sync);
+      el.removeEventListener('canplaythrough', sync);
+    };
+  }, [src]);
+
+  const typeAttr =
+    mediaType && mediaType.includes('opus')
+      ? 'audio/ogg; codecs=opus'
+      : mediaType && /^audio\//i.test(mediaType)
+      ? mediaType.split(';')[0].trim()
+      : 'audio/ogg';
+
+  return (
+    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+      <audio
+        ref={ref}
+        key={src}
+        controls
+        preload={inbound ? 'auto' : 'metadata'}
+        playsInline
+        style={{ height: '36px', width: '100%', minWidth: '160px', maxWidth: '240px' }}
+      >
+        <source src={src} type={typeAttr} />
+      </audio>
+      {durationText ? (
+        <span className="text-[10px] tabular-nums text-[#667781] px-0.5">{durationText}</span>
+      ) : null}
+    </div>
+  );
+};
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, bgDark }) => {
   const isOut = message.direction === 'OUTBOUND';
@@ -54,7 +113,7 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
     (typeof window !== 'undefined' ? window.location.origin : '');
   const isRawMetaMediaId = mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('blob:');
   const playableAudioUrl = isRawMetaMediaId
-    ? `${appBaseUrl}/media/whatsapp/${mediaUrl}`
+    ? `${appBaseUrl}/media/whatsapp/${encodeURIComponent(mediaUrl)}`
     : mediaUrl;
 
   return (
@@ -93,12 +152,11 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
             <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
               {playableAudioUrl ? (
-                <audio controls style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}>
-                  <source src={playableAudioUrl} type={message.mediaType || 'audio/ogg'} />
-                  <source src={playableAudioUrl} type="audio/ogg" />
-                  <source src={playableAudioUrl} type="audio/webm" />
-                  <source src={playableAudioUrl} type="audio/mpeg" />
-                </audio>
+                <VoiceNotePlayer
+                  src={playableAudioUrl}
+                  mediaType={message.mediaType}
+                  inbound={!isOut}
+                />
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
                   {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (
