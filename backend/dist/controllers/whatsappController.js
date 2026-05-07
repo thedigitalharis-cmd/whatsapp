@@ -315,7 +315,10 @@ const sendWhatsAppMessage = async (phoneNumberId, accessToken, to, payload) => {
         case 'document':
             return wa.sendDocument(phoneNumberId, accessToken, toNorm, payload.document?.link, payload.document?.filename || 'file', payload.document?.caption);
         case 'audio':
-            return wa.sendAudio(phoneNumberId, accessToken, toNorm, payload.audio?.link);
+            if (!payload.audio?.link || typeof payload.audio.link !== 'string') {
+                throw new Error('Missing audio URL — upload voice again.');
+            }
+            return wa.sendAudio(phoneNumberId, accessToken, toNorm, payload.audio.link);
         case 'video':
             return wa.sendVideo(phoneNumberId, accessToken, toNorm, payload.video?.link, payload.video?.caption);
         case 'location':
@@ -588,7 +591,8 @@ const handleWebhook = async (req, res) => {
                                         if (!fs.existsSync(uploadDir))
                                             fs.mkdirSync(uploadDir, { recursive: true });
                                         // Get media URL from Meta
-                                        const mediaInfoResp = await axios_1.default.get(`https://graph.facebook.com/v19.0/${msg.audio.id}`, { headers: { Authorization: `Bearer ${account.accessToken}` } });
+                                        const waVer = process.env.WHATSAPP_API_VERSION || 'v19.0';
+                                        const mediaInfoResp = await axios_1.default.get(`https://graph.facebook.com/${waVer}/${msg.audio.id}`, { headers: { Authorization: `Bearer ${account.accessToken}` } });
                                         const mediaDownloadUrl = mediaInfoResp.data.url;
                                         const mimeType = mediaInfoResp.data.mime_type || 'audio/ogg';
                                         const ext = mimeType.includes('ogg') ? '.ogg' : mimeType.includes('mp4') ? '.mp4' : '.webm';
@@ -599,7 +603,12 @@ const handleWebhook = async (req, res) => {
                                             headers: { Authorization: `Bearer ${account.accessToken}` },
                                             responseType: 'arraybuffer',
                                         });
-                                        fs.writeFileSync(filePath, audioResp.data);
+                                        const buf = Buffer.from(audioResp.data);
+                                        if (buf.length < 64) {
+                                            logger_1.logger.warn(`Inbound audio too small: ${buf.length} bytes`);
+                                            throw new Error('empty inbound audio');
+                                        }
+                                        fs.writeFileSync(filePath, buf);
                                         msgData.mediaUrl = `${(0, publicUrl_1.publicBaseUrl)()}/uploads/${filename}`;
                                         msgData.mediaType = mimeType;
                                         logger_1.logger.info(`Audio saved: ${filename}`);

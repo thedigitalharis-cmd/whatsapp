@@ -5,6 +5,7 @@ import fs from 'fs';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { publicBaseUrl } from '../utils/publicUrl';
+import { transcodeWebmToWhatsAppOgg, whatsAppVoiceOutputPath } from '../utils/voiceTranscode';
 
 const router = Router();
 
@@ -39,12 +40,32 @@ router.post('/audio', upload.single('audio'), async (req: AuthRequest, res: Resp
           return 'localhost';
         }
       })();
-    const publicUrl = `${proto}://${host}/uploads/${req.file.filename}`;
 
-    logger.info(`Audio saved: ${req.file.filename} (${req.file.size} bytes)`);
+    // Browser MediaRecorder sends WebM; Meta rejects it. Transcode to Opus-in-OGG (requires ffmpeg in Docker image).
+    const mime = (req.file.mimetype || '').toLowerCase();
+    const outPath = whatsAppVoiceOutputPath(uploadDir, req.file.path);
+    try {
+      await transcodeWebmToWhatsAppOgg(req.file.path, outPath);
+      fs.unlinkSync(req.file.path);
+    } catch (convErr: any) {
+      logger.error('Voice transcode failed — ensure ffmpeg is installed (apk add ffmpeg in backend image)', convErr?.message);
+      return res.status(422).json({
+        error:
+          'Voice encoding failed (ffmpeg). On server: rebuild backend image after git pull, or send text until ffmpeg is available.',
+      });
+    }
 
-    // Return local URL — WhatsApp will fetch it when we send the message
-    res.json({ url: publicUrl, filename: req.file.filename, mimeType: req.file.mimetype || 'audio/webm' });
+    const filename = path.basename(outPath);
+    const stat = fs.statSync(outPath);
+    if (stat.size < 200) {
+      fs.unlinkSync(outPath);
+      return res.status(400).json({ error: 'Recording too short or empty after encode' });
+    }
+
+    const publicUrl = `${proto}://${host}/uploads/${filename}`;
+    logger.info(`Audio encoded for WhatsApp: ${filename} (${stat.size} bytes, was ${mime})`);
+
+    res.json({ url: publicUrl, filename, mimeType: 'audio/ogg; codecs=opus' });
   } catch (e: any) {
     logger.error('Audio upload error:', e.message);
     res.status(500).json({ error: e.message });

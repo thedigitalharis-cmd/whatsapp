@@ -100,6 +100,7 @@ export async function sendTemplate(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'template',
     template: { name: templateName, language: { code: languageCode }, components },
@@ -118,6 +119,7 @@ export async function sendImage(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'image',
     image: { link: imageUrl, ...(caption && { caption }) },
@@ -137,6 +139,7 @@ export async function sendDocument(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'document',
     document: { link: documentUrl, filename, ...(caption && { caption }) },
@@ -154,6 +157,7 @@ export async function sendAudio(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'audio',
     audio: { link: audioUrl },
@@ -172,6 +176,7 @@ export async function sendVideo(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'video',
     video: { link: videoUrl, ...(caption && { caption }) },
@@ -192,6 +197,7 @@ export async function sendLocation(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'location',
     location: { latitude: lat, longitude: lng, ...(name && { name }), ...(address && { address }) },
@@ -212,6 +218,7 @@ export async function sendInteractiveButtons(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'interactive',
     interactive: {
@@ -239,6 +246,7 @@ export async function sendInteractiveList(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'interactive',
     interactive: {
@@ -276,6 +284,7 @@ export async function sendReaction(
   const client = waClient(accessToken);
   const { data } = await client.post(`/${phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'reaction',
     reaction: { message_id: messageId, emoji },

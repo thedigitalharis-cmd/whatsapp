@@ -7,6 +7,8 @@ const router = Router();
 
 // Public media proxy for WhatsApp media IDs.
 // Audio/video tags cannot attach Authorization headers, so this route must be public.
+const WA_VER = process.env.WHATSAPP_API_VERSION || 'v19.0';
+
 router.get('/whatsapp/:mediaId', async (req, res) => {
   try {
     const { mediaId } = req.params;
@@ -19,7 +21,7 @@ router.get('/whatsapp/:mediaId', async (req, res) => {
       return res.status(404).send('No active WhatsApp account configured');
     }
 
-    const meta = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+    const meta = await axios.get(`https://graph.facebook.com/${WA_VER}/${mediaId}`, {
       headers: { Authorization: `Bearer ${account.accessToken}` },
     });
 

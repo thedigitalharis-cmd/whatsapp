@@ -122,6 +122,10 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
           </p>
         )}
 
+        {isOut && message.status === 'FAILED' && message.errorMessage && (
+          <p className="text-[10px] text-red-600 mt-1 leading-snug break-words max-w-[220px]">{message.errorMessage}</p>
+        )}
+
         {/* Interactive buttons */}
         {message.interactive?.action?.buttons && (
           <div className="mt-2 space-y-1 border-t border-gray-200 pt-2">

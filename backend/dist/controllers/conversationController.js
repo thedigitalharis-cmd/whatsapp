@@ -245,7 +245,11 @@ const sendMessage = async (req, res) => {
             waMessageId = waResult?.messages?.[0]?.id;
         }
         catch (err) {
-            logger_1.logger.error('WhatsApp send error', { err: err.message });
+            logger_1.logger.error('WhatsApp send failed', {
+                err: err.message,
+                conversationId: conversation.id,
+                msgType: type,
+            });
             sendStatus = 'FAILED';
             errorMessage = err.message;
         }

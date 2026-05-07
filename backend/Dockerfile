@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install OpenSSL — required by Prisma on Alpine
-RUN apk add --no-cache curl openssl openssl-dev libc6-compat
+RUN apk add --no-cache curl openssl openssl-dev libc6-compat ffmpeg
 
 # Install production dependencies
 COPY package*.json ./
