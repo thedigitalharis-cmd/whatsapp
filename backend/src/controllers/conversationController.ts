@@ -6,9 +6,13 @@ import { logger } from '../utils/logger';
 
 export const getConversations = async (req: AuthRequest, res: Response) => {
   try {
-    const { page = 1, limit = 50, status, channel, assigneeId, teamId, search, priority } = req.query;
+    const { page = 1, limit = 50, status, channel, assigneeId, teamId, search, priority, archived } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
-    const where: any = { organizationId: req.user!.organizationId };
+    // Default: show non-archived; if archived=true show only archived
+    const where: any = {
+      organizationId: req.user!.organizationId,
+      isArchived: archived === 'true' ? true : false,
+    };
 
     if (status) where.status = status;
     if (channel) where.channel = channel;
@@ -94,6 +98,7 @@ export const updateConversationStatus = async (req: AuthRequest, res: Response) 
       data: {
         status,
         ...(status === 'RESOLVED' && { resolvedAt: new Date() }),
+        ...(status === 'OPEN' && { resolvedAt: null }),
       },
     });
 
@@ -101,6 +106,53 @@ export const updateConversationStatus = async (req: AuthRequest, res: Response) 
     io?.to(`org:${req.user!.organizationId}`).emit('conversation:status_changed', { id: conversation.id, status });
 
     res.json(conversation);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const archiveConversation = async (req: AuthRequest, res: Response) => {
+  try {
+    const conversation = await prisma.conversation.update({
+      where: { id: req.params.id },
+      data: { isArchived: true, archivedAt: new Date(), status: 'RESOLVED' },
+    });
+
+    const io = req.app.get('io');
+    io?.to(`org:${req.user!.organizationId}`).emit('conversation:archived', { id: conversation.id });
+
+    res.json(conversation);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const unarchiveConversation = async (req: AuthRequest, res: Response) => {
+  try {
+    const conversation = await prisma.conversation.update({
+      where: { id: req.params.id },
+      data: { isArchived: false, archivedAt: null, status: 'OPEN' },
+    });
+    res.json(conversation);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteConversation = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id;
+    // Cascade delete in correct order
+    await prisma.message.deleteMany({ where: { conversationId: id } });
+    await prisma.note.deleteMany({ where: { conversationId: id } });
+    // Remove tag connections
+    await prisma.conversation.update({ where: { id }, data: { tags: { set: [] } } });
+    // Delete ticket if linked
+    await prisma.ticket.deleteMany({ where: { conversationId: id } });
+    await prisma.followUp.updateMany({ where: { conversationId: id }, data: { conversationId: null } });
+    await prisma.conversation.delete({ where: { id } });
+
+    res.json({ message: 'Conversation deleted' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

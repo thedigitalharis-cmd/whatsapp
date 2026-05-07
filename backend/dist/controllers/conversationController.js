@@ -1,14 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addNote = exports.sendMessage = exports.getMessages = exports.toggleBot = exports.updateConversationStatus = exports.assignConversation = exports.getConversation = exports.getConversations = void 0;
+exports.addNote = exports.sendMessage = exports.getMessages = exports.toggleBot = exports.deleteConversation = exports.unarchiveConversation = exports.archiveConversation = exports.updateConversationStatus = exports.assignConversation = exports.getConversation = exports.getConversations = void 0;
 const database_1 = require("../config/database");
 const whatsappController_1 = require("./whatsappController");
 const logger_1 = require("../utils/logger");
 const getConversations = async (req, res) => {
     try {
-        const { page = 1, limit = 50, status, channel, assigneeId, teamId, search, priority } = req.query;
+        const { page = 1, limit = 50, status, channel, assigneeId, teamId, search, priority, archived } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
-        const where = { organizationId: req.user.organizationId };
+        // Default: show non-archived; if archived=true show only archived
+        const where = {
+            organizationId: req.user.organizationId,
+            isArchived: archived === 'true' ? true : false,
+        };
         if (status)
             where.status = status;
         if (channel)
@@ -98,6 +102,7 @@ const updateConversationStatus = async (req, res) => {
             data: {
                 status,
                 ...(status === 'RESOLVED' && { resolvedAt: new Date() }),
+                ...(status === 'OPEN' && { resolvedAt: null }),
             },
         });
         const io = req.app.get('io');
@@ -109,6 +114,53 @@ const updateConversationStatus = async (req, res) => {
     }
 };
 exports.updateConversationStatus = updateConversationStatus;
+const archiveConversation = async (req, res) => {
+    try {
+        const conversation = await database_1.prisma.conversation.update({
+            where: { id: req.params.id },
+            data: { isArchived: true, archivedAt: new Date(), status: 'RESOLVED' },
+        });
+        const io = req.app.get('io');
+        io?.to(`org:${req.user.organizationId}`).emit('conversation:archived', { id: conversation.id });
+        res.json(conversation);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.archiveConversation = archiveConversation;
+const unarchiveConversation = async (req, res) => {
+    try {
+        const conversation = await database_1.prisma.conversation.update({
+            where: { id: req.params.id },
+            data: { isArchived: false, archivedAt: null, status: 'OPEN' },
+        });
+        res.json(conversation);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.unarchiveConversation = unarchiveConversation;
+const deleteConversation = async (req, res) => {
+    try {
+        const id = req.params.id;
+        // Cascade delete in correct order
+        await database_1.prisma.message.deleteMany({ where: { conversationId: id } });
+        await database_1.prisma.note.deleteMany({ where: { conversationId: id } });
+        // Remove tag connections
+        await database_1.prisma.conversation.update({ where: { id }, data: { tags: { set: [] } } });
+        // Delete ticket if linked
+        await database_1.prisma.ticket.deleteMany({ where: { conversationId: id } });
+        await database_1.prisma.followUp.updateMany({ where: { conversationId: id }, data: { conversationId: null } });
+        await database_1.prisma.conversation.delete({ where: { id } });
+        res.json({ message: 'Conversation deleted' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.deleteConversation = deleteConversation;
 const toggleBot = async (req, res) => {
     try {
         const { botPaused } = req.body;

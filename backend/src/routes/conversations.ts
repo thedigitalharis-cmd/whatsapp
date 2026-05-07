@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import {
   getConversations, getConversation, assignConversation, updateConversationStatus,
   toggleBot, getMessages, sendMessage, addNote,
+  archiveConversation, unarchiveConversation, deleteConversation,
 } from '../controllers/conversationController';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
@@ -12,6 +13,9 @@ router.get('/', getConversations);
 router.get('/:id', getConversation);
 router.patch('/:id/assign', assignConversation);
 router.patch('/:id/status', updateConversationStatus);
+router.patch('/:id/archive', archiveConversation);
+router.patch('/:id/unarchive', unarchiveConversation);
+router.delete('/:id', deleteConversation);
 router.patch('/:id/bot', toggleBot);
 router.get('/:id/messages', getMessages);
 router.post('/:id/messages', sendMessage);

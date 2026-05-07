@@ -404,22 +404,48 @@ export const handleWebhook = async (req: Request, res: Response) => {
             });
 
             // Find or create open conversation
+            // Find existing non-archived conversation (any status)
             let conversation = await prisma.conversation.findFirst({
-              where: { contactId: contact.id, whatsappAccountId: account.id, status: { not: 'RESOLVED' } },
-              orderBy: { createdAt: 'desc' },
+              where: {
+                contactId: contact.id,
+                whatsappAccountId: account.id,
+                isArchived: false,
+                status: { not: 'RESOLVED' },
+              },
+              orderBy: { lastMessageAt: 'desc' },
             });
 
             if (!conversation) {
-              conversation = await prisma.conversation.create({
-                data: {
-                  organizationId: account.organizationId,
-                  whatsappAccountId: account.id,
+              // Check for resolved conversation to reopen (avoid duplicate chats)
+              const resolved = await prisma.conversation.findFirst({
+                where: {
                   contactId: contact.id,
-                  status: 'OPEN',
-                  channel: 'WHATSAPP',
-                  waitingSince: new Date(),
+                  whatsappAccountId: account.id,
+                  isArchived: false,
+                  status: 'RESOLVED',
                 },
+                orderBy: { resolvedAt: 'desc' },
               });
+
+              if (resolved) {
+                // Reopen existing resolved conversation
+                conversation = await prisma.conversation.update({
+                  where: { id: resolved.id },
+                  data: { status: 'OPEN', resolvedAt: null, waitingSince: new Date() },
+                });
+              } else {
+                // Create new conversation
+                conversation = await prisma.conversation.create({
+                  data: {
+                    organizationId: account.organizationId,
+                    whatsappAccountId: account.id,
+                    contactId: contact.id,
+                    status: 'OPEN',
+                    channel: 'WHATSAPP',
+                    waitingSince: new Date(),
+                  },
+                });
+              }
             }
 
             // Build message record

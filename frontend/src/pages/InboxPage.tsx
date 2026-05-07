@@ -81,14 +81,25 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
           </div>
         )}
         {message.type === 'AUDIO' && (
-          <div className={`flex items-center gap-2 p-2.5 rounded-xl mb-1 ${bgDark && !isOut ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
-            <MicrophoneIcon className="w-4 h-4 text-green-500" />
-            <div className="flex-1 flex items-center gap-0.5">
-              {[3,5,4,6,3,5,4,7,5,3,6,4,5,3,6].map((h, i) => (
-                <div key={i} className="w-0.5 rounded-full bg-green-400" style={{ height: `${h * 3}px` }} />
-              ))}
-            </div>
-            <span className="text-xs text-gray-500">0:30</span>
+          <div className="mb-1">
+            {message.mediaUrl ? (
+              <audio controls className="w-full max-w-xs" style={{ height: '36px' }}>
+                <source src={message.mediaUrl} type={message.mediaType || 'audio/ogg'} />
+                <source src={message.mediaUrl} type="audio/webm" />
+                <source src={message.mediaUrl} type="audio/mpeg" />
+                Your browser does not support audio.
+              </audio>
+            ) : (
+              <div className={`flex items-center gap-2 p-2.5 rounded-xl ${bgDark && !isOut ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
+                <MicrophoneIcon className="w-4 h-4 text-green-500" />
+                <div className="flex-1 flex items-center gap-0.5">
+                  {[3,5,4,6,3,5,4,7,5,3].map((h, i) => (
+                    <div key={i} className="w-0.5 rounded-full bg-green-400" style={{ height: `${h * 3}px` }} />
+                  ))}
+                </div>
+                <span className="text-xs text-gray-500">🎙️</span>
+              </div>
+            )}
           </div>
         )}
         {message.type === 'LOCATION' && message.location && (
@@ -144,7 +155,7 @@ const InboxPage: React.FC = () => {
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'open' | 'pending' | 'resolved'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'open' | 'pending' | 'resolved' | 'archived'>('all');
   const [filter, setFilter] = useState({ channel: '' });
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -193,11 +204,17 @@ const InboxPage: React.FC = () => {
     setShowBgPicker(false);
   };
 
-  const tabStatusMap: Record<string, string> = { all: '', open: 'OPEN', pending: 'PENDING', resolved: 'RESOLVED' };
+  const tabStatusMap: Record<string, string> = { all: '', open: 'OPEN', pending: 'PENDING', resolved: 'RESOLVED', archived: '' };
 
   const { data: conversations } = useQuery({
     queryKey: ['conversations', search, filter, activeTab],
-    queryFn: () => conversationsApi.list({ search, ...filter, status: tabStatusMap[activeTab], limit: 200 }).then(r => r.data.data),
+    queryFn: () => conversationsApi.list({
+      search,
+      ...filter,
+      status: tabStatusMap[activeTab],
+      archived: activeTab === 'archived' ? 'true' : 'false',
+      limit: 200,
+    }).then(r => r.data.data),
     refetchInterval: 5000,
   });
 
@@ -245,8 +262,14 @@ const InboxPage: React.FC = () => {
     onError: () => { conversationsApi.updateStatus(selectedConvId!, 'RESOLVED').then(() => { setSelectedConvId(null); setShowDeleteConfirm(false); qc.invalidateQueries({ queryKey: ['conversations'] }); toast.success('Archived'); }); },
   });
   const archiveMutation = useMutation({
-    mutationFn: () => conversationsApi.updateStatus(selectedConvId!, 'RESOLVED'),
-    onSuccess: () => { setSelectedConvId(null); qc.invalidateQueries({ queryKey: ['conversations'] }); toast.success('Archived'); },
+    mutationFn: () => api.patch(`/conversations/${selectedConvId}/archive`),
+    onSuccess: () => { setSelectedConvId(null); qc.invalidateQueries({ queryKey: ['conversations'] }); toast.success('Chat archived'); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Archive failed'),
+  });
+
+  const unarchiveMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/conversations/${id}/unarchive`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['conversations'] }); toast.success('Chat restored'); },
   });
   const blockMutation = useMutation({
     mutationFn: () => api.put(`/contacts/${selectedConv?.contact?.id}`, { isBlocked: !selectedConv?.contact?.isBlocked }),
@@ -601,14 +624,15 @@ const InboxPage: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-2 pt-2 gap-1" style={{ backgroundColor: '#111b21' }}>
+        <div className="flex px-2 pt-2 gap-0.5" style={{ backgroundColor: '#111b21' }}>
           {[
             { key: 'all', label: 'All' },
             { key: 'open', label: 'Open' },
             { key: 'pending', label: 'Pending' },
             { key: 'resolved', label: 'Done' },
+            { key: 'archived', label: '📦' },
           ].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+            <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); setSelectedConvId(null); }}
               className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${activeTab === tab.key
                 ? 'bg-whatsapp-teal text-white'
                 : 'text-[#8696a0] hover:text-white hover:bg-white/5'}`}>
@@ -835,7 +859,9 @@ const InboxPage: React.FC = () => {
                     {[
                       { icon: UserPlusIcon, label: 'Save / Edit Contact', action: () => { setContactForm({ firstName: contact?.firstName || '', lastName: contact?.lastName || '', email: contact?.email || '', company: contact?.company || '', jobTitle: '', gdprConsent: contact?.gdprConsent || false }); setShowSaveContact(true); setShowMoreMenu(false); } },
                       { icon: UserGroupIcon, label: 'Manage Groups', action: () => { setShowGroupModal(true); setShowMoreMenu(false); } },
-                      { icon: ArchiveBoxIcon, label: 'Archive Chat', action: () => { archiveMutation.mutate(); setShowMoreMenu(false); }, color: '#f59e0b' },
+                      selectedConv?.isArchived
+                        ? { icon: ArchiveBoxIcon, label: 'Unarchive Chat', action: () => { unarchiveMutation.mutate(selectedConvId!); setShowMoreMenu(false); }, color: '#25d366' }
+                        : { icon: ArchiveBoxIcon, label: 'Archive Chat', action: () => { archiveMutation.mutate(); setShowMoreMenu(false); }, color: '#f59e0b' },
                       { icon: NoSymbolIcon, label: contact?.isBlocked ? 'Unblock Contact' : 'Block Contact', action: () => { blockMutation.mutate(); setShowMoreMenu(false); }, color: '#ef4444' },
                       { icon: TrashIcon, label: 'Delete Chat', action: () => { setShowDeleteConfirm(true); setShowMoreMenu(false); }, color: '#ef4444' },
                     ].map(item => (
