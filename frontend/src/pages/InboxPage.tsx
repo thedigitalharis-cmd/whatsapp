@@ -44,6 +44,53 @@ const channelIcons: Record<string, string> = {
   TELEGRAM: '✈️', EMAIL: '📧', SMS: '💬',
 };
 
+/** Meta stores raw media id; DB may store full https URL — use path on same host so <audio> loads reliably. */
+function voicePlayerSrc(mediaUrl: string, appBase: string): string {
+  const v = (mediaUrl || '').trim();
+  if (!v) return '';
+  if (!v.startsWith('http') && !v.startsWith('blob:')) {
+    return `${appBase}/media/whatsapp/${encodeURIComponent(v)}`;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const u = new URL(v);
+      if (u.origin === window.location.origin) return `${u.pathname}${u.search}`;
+    } catch {
+      /* ignore */
+    }
+  }
+  return v;
+}
+
+const VoiceMessageAudio: React.FC<{ messageId: string; mediaUrl: string; appBase: string }> = ({
+  messageId,
+  mediaUrl,
+  appBase,
+}) => {
+  const [fallback, setFallback] = useState(false);
+  const src = voicePlayerSrc(mediaUrl, appBase);
+  if (!src) return null;
+
+  return (
+    <div className="flex flex-col gap-1 flex-1 min-w-0">
+      <audio
+        key={messageId}
+        controls
+        preload="metadata"
+        playsInline
+        src={src}
+        onError={() => setFallback(true)}
+        style={{ height: '34px', flex: 1, minWidth: '140px', maxWidth: '220px' }}
+      />
+      {fallback && (
+        <a href={src} target="_blank" rel="noreferrer" className="text-[10px] text-blue-600 underline">
+          Open voice note in new tab
+        </a>
+      )}
+    </div>
+  );
+};
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, bgDark }) => {
   const isOut = message.direction === 'OUTBOUND';
@@ -52,10 +99,6 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
   const appBaseUrl =
     (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') ||
     (typeof window !== 'undefined' ? window.location.origin : '');
-  const isRawMetaMediaId = mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('blob:');
-  const playableAudioUrl = isRawMetaMediaId
-    ? `${appBaseUrl}/media/whatsapp/${mediaUrl}`
-    : mediaUrl;
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
@@ -92,13 +135,8 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
           <div className="mb-1 min-w-[200px]">
             <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
-              {playableAudioUrl ? (
-                <audio controls style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}>
-                  <source src={playableAudioUrl} type={message.mediaType || 'audio/ogg'} />
-                  <source src={playableAudioUrl} type="audio/ogg" />
-                  <source src={playableAudioUrl} type="audio/webm" />
-                  <source src={playableAudioUrl} type="audio/mpeg" />
-                </audio>
+              {mediaUrl ? (
+                <VoiceMessageAudio messageId={message.id} mediaUrl={mediaUrl} appBase={appBaseUrl} />
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
                   {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (
