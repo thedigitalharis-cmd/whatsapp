@@ -44,18 +44,64 @@ const channelIcons: Record<string, string> = {
   TELEGRAM: '✈️', EMAIL: '📧', SMS: '💬',
 };
 
+/** Media URLs must use the page origin (nginx proxies /media). REACT_APP_API_URL often still says localhost in prod builds. */
+function sameOriginBase(): string {
+  if (typeof window !== 'undefined') return window.location.origin;
+  return (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') || '';
+}
+
+/** Raw Meta id → /media/whatsapp/:id; same-host absolute URLs → path-only for consistent playback. */
+function voiceAudioSrc(mediaUrl: string): string {
+  const v = (mediaUrl || '').trim();
+  if (!v) return '';
+  if (!v.startsWith('http') && !v.startsWith('blob:')) {
+    return `${sameOriginBase()}/media/whatsapp/${encodeURIComponent(v)}`;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const u = new URL(v);
+      if (u.origin === window.location.origin) return `${u.pathname}${u.search}`;
+    } catch {
+      /* ignore */
+    }
+  }
+  return v;
+}
+
+function conversationLastPreview(lastMsg: any | undefined): string {
+  if (!lastMsg) return 'No messages yet';
+  const text = typeof lastMsg.content === 'string' ? lastMsg.content.trim() : '';
+  if (text) return text;
+  const t = lastMsg.type as string | undefined;
+  switch (t) {
+    case 'AUDIO':
+    case 'VOICE':
+      return '🎤 Voice message';
+    case 'IMAGE':
+      return '📷 Photo';
+    case 'VIDEO':
+      return '🎬 Video';
+    case 'DOCUMENT':
+      return '📎 Document';
+    case 'LOCATION':
+      return '📍 Location';
+    case 'STICKER':
+      return '🎨 Sticker';
+    case 'TEMPLATE':
+      return '📋 Template';
+    case 'INTERACTIVE':
+      return '🔘 Reply';
+    default:
+      return 'Message';
+  }
+}
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, bgDark }) => {
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const mediaUrl = message.mediaUrl || '';
-  const appBaseUrl =
-    (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') ||
-    (typeof window !== 'undefined' ? window.location.origin : '');
-  const isRawMetaMediaId = mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('blob:');
-  const playableAudioUrl = isRawMetaMediaId
-    ? `${appBaseUrl}/media/whatsapp/${encodeURIComponent(mediaUrl)}`
-    : mediaUrl;
+  const playableAudioUrl = voiceAudioSrc(mediaUrl);
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
@@ -96,7 +142,7 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
                 <audio
                   key={`${message.id}-${playableAudioUrl}`}
                   controls
-                  preload="none"
+                  preload="metadata"
                   playsInline
                   src={playableAudioUrl}
                   style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}
@@ -716,7 +762,7 @@ const InboxPage: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm truncate" style={{ color: '#8696a0' }}>
-                      {conv.messages?.[0]?.content || 'No messages yet'}
+                      {conversationLastPreview(conv.messages?.[0])}
                     </p>
                     {conv.status === 'OPEN' && (
                       <span className="flex-shrink-0 ml-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: '#25d366' }}>
