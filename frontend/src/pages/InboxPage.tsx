@@ -44,12 +44,16 @@ const channelIcons: Record<string, string> = {
   TELEGRAM: '✈️', EMAIL: '📧', SMS: '💬',
 };
 
-/** Meta stores raw media id; DB may store full https URL — use path on same host so <audio> loads reliably. */
-function voicePlayerSrc(mediaUrl: string, appBase: string): string {
+/**
+ * Meta may store a raw media id or a saved /uploads URL.
+ * HTML audio must load from the same browser origin as the SPA (nginx proxies /media and /uploads).
+ * Never use REACT_APP_API_URL host here — production builds often bake localhost and break playback.
+ */
+function voicePlayerSrc(mediaUrl: string, sameOriginBase: string): string {
   const v = (mediaUrl || '').trim();
   if (!v) return '';
   if (!v.startsWith('http') && !v.startsWith('blob:')) {
-    return `${appBase}/media/whatsapp/${encodeURIComponent(v)}`;
+    return `${sameOriginBase}/media/whatsapp/${encodeURIComponent(v)}`;
   }
   if (typeof window !== 'undefined') {
     try {
@@ -62,32 +66,23 @@ function voicePlayerSrc(mediaUrl: string, appBase: string): string {
   return v;
 }
 
-const VoiceMessageAudio: React.FC<{ messageId: string; mediaUrl: string; appBase: string }> = ({
+const VoiceMessageAudio: React.FC<{ messageId: string; mediaUrl: string; sameOriginBase: string }> = ({
   messageId,
   mediaUrl,
-  appBase,
+  sameOriginBase,
 }) => {
-  const [fallback, setFallback] = useState(false);
-  const src = voicePlayerSrc(mediaUrl, appBase);
+  const src = voicePlayerSrc(mediaUrl, sameOriginBase);
   if (!src) return null;
 
   return (
-    <div className="flex flex-col gap-1 flex-1 min-w-0">
-      <audio
-        key={messageId}
-        controls
-        preload="metadata"
-        playsInline
-        src={src}
-        onError={() => setFallback(true)}
-        style={{ height: '34px', flex: 1, minWidth: '140px', maxWidth: '220px' }}
-      />
-      {fallback && (
-        <a href={src} target="_blank" rel="noreferrer" className="text-[10px] text-blue-600 underline">
-          Open voice note in new tab
-        </a>
-      )}
-    </div>
+    <audio
+      key={messageId}
+      controls
+      preload="metadata"
+      playsInline
+      src={src}
+      style={{ height: '34px', flex: 1, minWidth: '140px', maxWidth: '220px' }}
+    />
   );
 };
 
@@ -96,9 +91,10 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const mediaUrl = message.mediaUrl || '';
-  const appBaseUrl =
-    (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') ||
-    (typeof window !== 'undefined' ? window.location.origin : '');
+  const sameOriginBase =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') || '';
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-1 px-4`}>
@@ -136,7 +132,7 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
             <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
               {mediaUrl ? (
-                <VoiceMessageAudio messageId={message.id} mediaUrl={mediaUrl} appBase={appBaseUrl} />
+                <VoiceMessageAudio messageId={message.id} mediaUrl={mediaUrl} sameOriginBase={sameOriginBase} />
               ) : (
                 <div className="flex flex-1 items-center gap-0.5">
                   {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (
