@@ -49,10 +49,12 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const mediaUrl = message.mediaUrl || '';
-  const appBaseUrl = (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '');
+  const appBaseUrl =
+    (process.env.REACT_APP_API_URL || '').replace(/\/api$/, '') ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
   const isRawMetaMediaId = mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('blob:');
   const playableAudioUrl = isRawMetaMediaId
-    ? `${appBaseUrl}/media/whatsapp/${mediaUrl}`
+    ? `${appBaseUrl}/media/whatsapp/${encodeURIComponent(mediaUrl)}`
     : mediaUrl;
 
   return (
@@ -92,8 +94,10 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
               <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
               {playableAudioUrl ? (
                 <audio
+                  key={`${message.id}-${playableAudioUrl}`}
                   controls
-                  preload="metadata"
+                  preload="none"
+                  playsInline
                   src={playableAudioUrl}
                   style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}
                 />

@@ -8,6 +8,8 @@ const router = Router();
 // Public media proxy for WhatsApp media IDs.
 // Audio/video tags cannot attach Authorization headers, so this route must be public.
 const WA_VER = process.env.WHATSAPP_API_VERSION || 'v19.0';
+/** Voice notes are small; buffering fixes HTML5 <audio> grey/disabled controls with chunked streams (no Content-Length). */
+const MAX_PROXY_BYTES = 25 * 1024 * 1024;
 
 router.get('/whatsapp/:mediaId', async (req, res) => {
   const { mediaId } = req.params;
@@ -38,13 +40,25 @@ router.get('/whatsapp/:mediaId', async (req, res) => {
 
       const media = await axios.get(mediaUrl, {
         headers: { Authorization: `Bearer ${account.accessToken}` },
-        responseType: 'stream',
+        responseType: 'arraybuffer',
         timeout: 90000,
+        maxContentLength: MAX_PROXY_BYTES,
+        maxBodyLength: MAX_PROXY_BYTES,
       });
 
-      res.setHeader('Content-Type', String(media.headers['content-type'] || 'audio/ogg'));
+      const buf = Buffer.from(media.data as ArrayBuffer);
+      if (buf.length > MAX_PROXY_BYTES) {
+        lastErr = 'Media too large';
+        continue;
+      }
+
+      const ct = String(media.headers['content-type'] || 'audio/ogg').split(';')[0].trim() || 'audio/ogg';
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      media.data.pipe(res);
+      res.status(200).end(buf);
       return;
     } catch (error: any) {
       const msg =
