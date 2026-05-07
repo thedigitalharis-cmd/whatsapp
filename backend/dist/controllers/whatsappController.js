@@ -346,7 +346,8 @@ const handleWebhook = async (req, res) => {
             const mode = req.query['hub.mode'];
             const token = req.query['hub.verify_token'];
             const challenge = req.query['hub.challenge'];
-            if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+            const verifyTok = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim();
+            if (mode === 'subscribe' && token === verifyTok) {
                 logger_1.logger.info('WhatsApp webhook verified');
                 return res.status(200).send(challenge);
             }
@@ -371,6 +372,7 @@ const handleWebhook = async (req, res) => {
             logger_1.logger.warn(`Webhook POST ignored: object=${body?.object ?? 'undefined'}`);
             return res.sendStatus(200);
         }
+        logger_1.logger.info(`WhatsApp webhook POST ok: entries=${body.entry?.length ?? 0} (object=whatsapp_business_account)`);
         for (const entry of body.entry || []) {
             for (const change of entry.changes || []) {
                 const field = String(change.field || '').trim();
@@ -406,12 +408,59 @@ const handleWebhook = async (req, res) => {
                     let account = metaPhoneId
                         ? await database_1.prisma.whatsAppAccount.findFirst({ where: { phoneNumberId: metaPhoneId } })
                         : null;
-                    // Fallback: match CRM row by display phone if Phone Number ID was pasted wrong but sends still work
+                    const syncPhoneIdIfNeeded = async (acc) => {
+                        if (metaPhoneId && acc.phoneNumberId !== metaPhoneId) {
+                            try {
+                                await database_1.prisma.whatsAppAccount.update({
+                                    where: { id: acc.id },
+                                    data: { phoneNumberId: metaPhoneId },
+                                });
+                                logger_1.logger.info(`Webhook: synced phoneNumberId → ${metaPhoneId} for account ${acc.id}`);
+                            }
+                            catch (e) {
+                                logger_1.logger.warn(`Webhook: could not sync phoneNumberId: ${e.message}`);
+                            }
+                        }
+                    };
+                    // Prefer WABA (entry.id) before global display match — avoids wrong org in multi-tenant
+                    if (!account && entry?.id) {
+                        const wabaId = String(entry.id).trim();
+                        const byWaba = await database_1.prisma.whatsAppAccount.findMany({
+                            where: { businessAccountId: wabaId },
+                        });
+                        if (byWaba.length === 1) {
+                            account = byWaba[0];
+                            logger_1.logger.warn(`Webhook: matched CRM account by WABA id=${wabaId} (single line). Meta phone_number_id=${metaPhoneId} CRM had=${account.phoneNumberId}`);
+                        }
+                        else if (byWaba.length > 1) {
+                            if (metaPhoneId) {
+                                account = byWaba.find((a) => a.phoneNumberId === metaPhoneId) || null;
+                            }
+                            if (!account && value.metadata?.display_phone_number) {
+                                const d = String(value.metadata.display_phone_number).replace(/\D/g, '');
+                                account =
+                                    byWaba.find((c) => {
+                                        const s = String(c.phoneNumber || '').replace(/\D/g, '');
+                                        return s === d || s.endsWith(d) || d.endsWith(s);
+                                    }) || null;
+                            }
+                            if (account) {
+                                logger_1.logger.warn(`Webhook: matched one of ${byWaba.length} CRM lines under WABA ${wabaId} via phone_number_id or display phone`);
+                            }
+                            else {
+                                logger_1.logger.warn(`Webhook: WABA ${wabaId} has ${byWaba.length} CRM lines; could not match phone_number_id=${metaPhoneId} display=${value.metadata?.display_phone_number}`);
+                            }
+                        }
+                        if (account)
+                            await syncPhoneIdIfNeeded(account);
+                    }
+                    // Last resort: display phone across CRM (single-tenant / one WA account setups)
                     if (!account && value.metadata?.display_phone_number) {
                         const displayDigits = String(value.metadata.display_phone_number).replace(/\D/g, '');
                         if (displayDigits) {
                             const candidates = await database_1.prisma.whatsAppAccount.findMany({
-                                where: { status: { in: ['ACTIVE', 'PENDING'] } },
+                                where: { status: { in: ['ACTIVE', 'PENDING', 'SUSPENDED'] } },
+                                take: 50,
                             });
                             account =
                                 candidates.find((c) => {
@@ -419,25 +468,16 @@ const handleWebhook = async (req, res) => {
                                     return stored === displayDigits || stored.endsWith(displayDigits) || displayDigits.endsWith(stored);
                                 }) || null;
                             if (account) {
-                                logger_1.logger.warn(`Webhook: matched account by display_phone_number=${displayDigits} (DB phone_number_id was ${account.phoneNumberId}, Meta sent ${metaPhoneId}) — update Phone number ID in CRM`);
-                                if (metaPhoneId && account.phoneNumberId !== metaPhoneId) {
-                                    try {
-                                        await database_1.prisma.whatsAppAccount.update({
-                                            where: { id: account.id },
-                                            data: { phoneNumberId: metaPhoneId },
-                                        });
-                                    }
-                                    catch (e) {
-                                        logger_1.logger.warn(`Webhook: could not sync phoneNumberId: ${e.message}`);
-                                    }
-                                }
+                                logger_1.logger.warn(`Webhook: matched account by display_phone only (DB phone_number_id=${account.phoneNumberId}, Meta sent ${metaPhoneId}) — set Business account ID + Phone number ID in CRM`);
+                                await syncPhoneIdIfNeeded(account);
                             }
                         }
                     }
                     if (!account) {
-                        logger_1.logger.warn(`Webhook: no WhatsAppAccount for phone_number_id=${metaPhoneId} display=${value.metadata?.display_phone_number} — fix CRM WhatsApp account or Meta subscription`);
+                        logger_1.logger.warn(`Webhook: no WhatsAppAccount for phone_number_id=${metaPhoneId} display=${value.metadata?.display_phone_number} waba_entry=${entry?.id} — add account in CRM or check Meta → Webhooks → messages`);
                         continue;
                     }
+                    let storedInbound = 0;
                     for (const msg of value.messages) {
                         // Upsert contact
                         const profileName = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name;
@@ -595,6 +635,7 @@ const handleWebhook = async (req, res) => {
                                 msgData.content = JSON.stringify(msg);
                         }
                         const message = await database_1.prisma.message.create({ data: msgData });
+                        storedInbound += 1;
                         // Mark read on Meta
                         try {
                             await wa.markMessageRead(account.phoneNumberId, account.accessToken, msg.id);
@@ -616,6 +657,9 @@ const handleWebhook = async (req, res) => {
                             });
                             io.to(`conv:${conversation.id}`).emit('message:new', message);
                         }
+                    }
+                    if (storedInbound > 0) {
+                        logger_1.logger.info(`Webhook: saved ${storedInbound} inbound message(s) org=${account.organizationId} conv routing ok`);
                     }
                 }
                 // ── Template status updates ──────────────────────────────────────
