@@ -81,25 +81,23 @@ const MessageBubble: React.FC<{ message: any; bgDark?: boolean }> = ({ message, 
           </div>
         )}
         {message.type === 'AUDIO' && (
-          <div className="mb-1">
-            {message.mediaUrl ? (
-              <audio controls className="w-full max-w-xs" style={{ height: '36px' }}>
-                <source src={message.mediaUrl} type={message.mediaType || 'audio/ogg'} />
-                <source src={message.mediaUrl} type="audio/webm" />
-                <source src={message.mediaUrl} type="audio/mpeg" />
-                Your browser does not support audio.
-              </audio>
-            ) : (
-              <div className={`flex items-center gap-2 p-2.5 rounded-xl ${bgDark && !isOut ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
-                <MicrophoneIcon className="w-4 h-4 text-green-500" />
-                <div className="flex-1 flex items-center gap-0.5">
-                  {[3,5,4,6,3,5,4,7,5,3].map((h, i) => (
+          <div className="mb-1 min-w-[200px]">
+            <div className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isOut ? 'bg-[#c8f7c5]' : bgDark ? 'bg-[#2a3942]' : 'bg-gray-100'}`}>
+              <MicrophoneIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#25d366' }} />
+              {message.mediaUrl ? (
+                <audio controls style={{ height: '32px', flex: 1, minWidth: '140px', maxWidth: '200px' }}>
+                  <source src={message.mediaUrl} type="audio/ogg" />
+                  <source src={message.mediaUrl} type="audio/webm" />
+                  <source src={message.mediaUrl} type="audio/mpeg" />
+                </audio>
+              ) : (
+                <div className="flex flex-1 items-center gap-0.5">
+                  {[3,5,4,7,4,6,3,5,4,6,3,5].map((h, i) => (
                     <div key={i} className="w-0.5 rounded-full bg-green-400" style={{ height: `${h * 3}px` }} />
                   ))}
                 </div>
-                <span className="text-xs text-gray-500">🎙️</span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
         {message.type === 'LOCATION' && message.location && (
@@ -355,8 +353,9 @@ const InboxPage: React.FC = () => {
         if (blob.size < 500) { toast.error('Recording too short — try again'); stream.getTracks().forEach(t => t.stop()); setRecordingTime(0); return; }
         const duration = recordingTime > 0 ? recordingTime : 1;
 
-        // Upload audio to server — server gets WA credentials from DB, uploads to Meta
+        // Upload audio → server converts to OGG → uploads to Meta → sends media_id
         try {
+          toast('📤 Sending voice message...', { duration: 3000 });
           const formData = new FormData();
           formData.append('audio', blob, `voice_${Date.now()}.webm`);
           formData.append('conversationId', selectedConvId || '');
@@ -370,19 +369,34 @@ const InboxPage: React.FC = () => {
 
           if (uploadRes.ok) {
             const result = await uploadRes.json();
+            // Store local blob URL so agent can listen to it in CRM
+            const localBlobUrl = URL.createObjectURL(blob);
             if (result.mediaId) {
-              // Send using Meta media_id (best quality, works reliably)
-              sendMutation.mutate({ type: 'AUDIO', mediaId: result.mediaId, mediaType: result.mimeType, content: `🎙️ Voice message (${duration}s)` });
+              sendMutation.mutate({
+                type: 'AUDIO',
+                mediaId: result.mediaId,
+                mediaUrl: localBlobUrl,
+                mediaType: 'audio/ogg',
+                content: `🎙️ Voice message (${duration}s)`,
+              });
+              toast.success('✅ Voice message sent!');
             } else if (result.url) {
-              // Fallback: send via URL
-              sendMutation.mutate({ type: 'AUDIO', mediaUrl: result.url, mediaType: result.mimeType || 'audio/ogg', content: `🎙️ Voice message (${duration}s)` });
+              sendMutation.mutate({
+                type: 'AUDIO',
+                mediaUrl: result.url,
+                mediaType: result.mimeType || 'audio/ogg',
+                content: `🎙️ Voice message (${duration}s)`,
+              });
+              toast.success('✅ Voice message sent!');
+            } else {
+              throw new Error(result.error || 'Upload failed');
             }
-            toast.success('Voice message sent!');
           } else {
-            throw new Error('Upload failed');
+            const err = await uploadRes.json().catch(() => ({}));
+            throw new Error(err.error || `Server error ${uploadRes.status}`);
           }
         } catch (err: any) {
-          toast.error(`Voice message failed: ${err.message}`);
+          toast.error(`Voice failed: ${err.message}`);
         }
         stream.getTracks().forEach(t => t.stop());
         setRecordingTime(0);

@@ -467,13 +467,13 @@ const handleWebhook = async (req, res) => {
                                 msgData.caption = msg.image?.caption;
                                 break;
                             case 'audio':
-                                msgData.type = 'AUDIO';
-                                msgData.mediaUrl = msg.audio?.id;
-                                msgData.mediaType = msg.audio?.mime_type;
-                                break;
                             case 'voice':
-                                msgData.type = 'VOICE';
-                                msgData.mediaUrl = msg.audio?.id;
+                                msgData.type = 'AUDIO';
+                                // Store media_id — we resolve to URL when displaying
+                                msgData.mediaUrl = msg.audio?.id
+                                    ? `https://betteraisender.com/api/whatsapp/media-proxy/${msg.audio.id}`
+                                    : null;
+                                msgData.mediaType = 'audio/ogg';
                                 break;
                             case 'video':
                                 msgData.type = 'VIDEO';
