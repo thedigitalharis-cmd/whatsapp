@@ -5,6 +5,12 @@ import { logger } from '../utils/logger';
 const WA_VERSION = process.env.WHATSAPP_API_VERSION || 'v19.0';
 const GRAPH = `https://graph.facebook.com/${WA_VERSION}`;
 
+/** Cloud API expects international number with digits only (no +, spaces, or dashes). */
+export function normalizeWaRecipient(phone: string): string {
+  if (!phone) return '';
+  return String(phone).replace(/\D/g, '');
+}
+
 // ─── Axios factory per account ─────────────────────────────────────────────
 export function waClient(accessToken: string): AxiosInstance {
   const client = axios.create({

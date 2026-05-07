@@ -1,4 +1,6 @@
 import { AxiosInstance } from 'axios';
+/** Cloud API expects international number with digits only (no +, spaces, or dashes). */
+export declare function normalizeWaRecipient(phone: string): string;
 export declare function waClient(accessToken: string): AxiosInstance;
 export declare function verifyAccount(phoneNumberId: string, accessToken: string): Promise<any>;
 export declare function getBusinessProfile(phoneNumberId: string, accessToken: string): Promise<any>;

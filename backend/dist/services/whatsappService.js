@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeWaRecipient = normalizeWaRecipient;
 exports.waClient = waClient;
 exports.verifyAccount = verifyAccount;
 exports.getBusinessProfile = getBusinessProfile;
@@ -63,6 +64,12 @@ const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = require("../utils/logger");
 const WA_VERSION = process.env.WHATSAPP_API_VERSION || 'v19.0';
 const GRAPH = `https://graph.facebook.com/${WA_VERSION}`;
+/** Cloud API expects international number with digits only (no +, spaces, or dashes). */
+function normalizeWaRecipient(phone) {
+    if (!phone)
+        return '';
+    return String(phone).replace(/\D/g, '');
+}
 // ─── Axios factory per account ─────────────────────────────────────────────
 function waClient(accessToken) {
     const client = axios_1.default.create({

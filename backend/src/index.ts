@@ -78,7 +78,17 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-app.use(express.json({ limit: '50mb' }));
+// Capture raw JSON body for /webhook — Meta signature must be verified against exact bytes, not re-stringified req.body
+app.use(
+  express.json({
+    limit: '50mb',
+    verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
+      if (req.originalUrl?.startsWith('/webhook')) {
+        req.rawBody = buf.toString('utf8');
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check

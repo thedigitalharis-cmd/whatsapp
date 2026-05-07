@@ -76,7 +76,15 @@ const limiter = (0, express_rate_limit_1.default)({
     message: 'Too many requests from this IP',
 });
 app.use('/api', limiter);
-app.use(express_1.default.json({ limit: '50mb' }));
+// Capture raw JSON body for /webhook — Meta signature must be verified against exact bytes, not re-stringified req.body
+app.use(express_1.default.json({
+    limit: '50mb',
+    verify: (req, _res, buf) => {
+        if (req.originalUrl?.startsWith('/webhook')) {
+            req.rawBody = buf.toString('utf8');
+        }
+    },
+}));
 app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 // Health check
 app.get('/health', (req, res) => {

@@ -289,31 +289,35 @@ function mapMetaStatus(s) {
 }
 // ─── Send message (used by conversation controller + direct API) ───────────
 const sendWhatsAppMessage = async (phoneNumberId, accessToken, to, payload) => {
+    const toNorm = wa.normalizeWaRecipient(to);
+    if (!toNorm) {
+        throw new Error('Invalid recipient phone number (empty after normalization)');
+    }
     // Delegate to the typed helpers based on type
     const type = payload.type || 'text';
     switch (type) {
         case 'template':
-            return wa.sendTemplate(phoneNumberId, accessToken, to, payload.template.name, payload.template.language?.code || 'en_US', payload.template.components || []);
+            return wa.sendTemplate(phoneNumberId, accessToken, toNorm, payload.template.name, payload.template.language?.code || 'en_US', payload.template.components || []);
         case 'image':
-            return wa.sendImage(phoneNumberId, accessToken, to, payload.image?.link || payload.image?.url, payload.image?.caption);
+            return wa.sendImage(phoneNumberId, accessToken, toNorm, payload.image?.link || payload.image?.url, payload.image?.caption);
         case 'document':
-            return wa.sendDocument(phoneNumberId, accessToken, to, payload.document?.link, payload.document?.filename || 'file', payload.document?.caption);
+            return wa.sendDocument(phoneNumberId, accessToken, toNorm, payload.document?.link, payload.document?.filename || 'file', payload.document?.caption);
         case 'audio':
-            return wa.sendAudio(phoneNumberId, accessToken, to, payload.audio?.link);
+            return wa.sendAudio(phoneNumberId, accessToken, toNorm, payload.audio?.link);
         case 'video':
-            return wa.sendVideo(phoneNumberId, accessToken, to, payload.video?.link, payload.video?.caption);
+            return wa.sendVideo(phoneNumberId, accessToken, toNorm, payload.video?.link, payload.video?.caption);
         case 'location':
-            return wa.sendLocation(phoneNumberId, accessToken, to, payload.location?.latitude, payload.location?.longitude, payload.location?.name, payload.location?.address);
+            return wa.sendLocation(phoneNumberId, accessToken, toNorm, payload.location?.latitude, payload.location?.longitude, payload.location?.name, payload.location?.address);
         case 'interactive':
             if (payload.interactive?.type === 'button') {
-                return wa.sendInteractiveButtons(phoneNumberId, accessToken, to, payload.interactive.body?.text, payload.interactive.action?.buttons?.map((b) => ({ id: b.reply.id, title: b.reply.title })), payload.interactive.header?.text, payload.interactive.footer?.text);
+                return wa.sendInteractiveButtons(phoneNumberId, accessToken, toNorm, payload.interactive.body?.text, payload.interactive.action?.buttons?.map((b) => ({ id: b.reply.id, title: b.reply.title })), payload.interactive.header?.text, payload.interactive.footer?.text);
             }
             if (payload.interactive?.type === 'list') {
-                return wa.sendInteractiveList(phoneNumberId, accessToken, to, payload.interactive.body?.text, payload.interactive.action?.button, payload.interactive.action?.sections);
+                return wa.sendInteractiveList(phoneNumberId, accessToken, toNorm, payload.interactive.body?.text, payload.interactive.action?.button, payload.interactive.action?.sections);
             }
             break;
         default:
-            return wa.sendText(phoneNumberId, accessToken, to, payload.text?.body || payload.content || '');
+            return wa.sendText(phoneNumberId, accessToken, toNorm, payload.text?.body || payload.content || '');
     }
 };
 exports.sendWhatsAppMessage = sendWhatsAppMessage;
@@ -348,10 +352,14 @@ const handleWebhook = async (req, res) => {
             }
             return res.status(403).json({ error: 'Verification failed' });
         }
-        // POST: incoming events — validate signature if app secret is set
+        // POST: incoming events — validate signature if app secret is set (must use raw body from express.json verify)
         if (process.env.WHATSAPP_APP_SECRET) {
             const sig = req.headers['x-hub-signature-256'] || '';
-            const rawBody = JSON.stringify(req.body);
+            const rawBody = req.rawBody;
+            if (!rawBody) {
+                logger_1.logger.warn('Webhook: rawBody missing — cannot verify signature');
+                return res.sendStatus(401);
+            }
             if (!wa.validateWebhookSignature(rawBody, sig, process.env.WHATSAPP_APP_SECRET)) {
                 logger_1.logger.warn('Invalid webhook signature');
                 return res.sendStatus(401);
@@ -390,11 +398,14 @@ const handleWebhook = async (req, res) => {
                 }
                 // ── Incoming messages ───────────────────────────────────────────
                 if (value.messages) {
+                    const metaPhoneId = String(value.metadata?.phone_number_id ?? '').trim();
                     const account = await database_1.prisma.whatsAppAccount.findFirst({
-                        where: { phoneNumberId: value.metadata?.phone_number_id },
+                        where: { phoneNumberId: metaPhoneId },
                     });
-                    if (!account)
+                    if (!account) {
+                        logger_1.logger.warn(`Webhook: no WhatsAppAccount for phone_number_id=${metaPhoneId} — add/verify account in CRM or fix Meta webhook phone`);
                         continue;
+                    }
                     for (const msg of value.messages) {
                         // Upsert contact
                         const profileName = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name;
