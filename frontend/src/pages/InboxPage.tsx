@@ -80,9 +80,13 @@ const MessageBubble: React.FC<{ message: any }> = ({ message }) => {
                 controls
                 preload="metadata"
                 playsInline
-                src={audioSrc}
                 style={{ height: '32px', minWidth: '140px', maxWidth: '220px' }}
-              />
+              >
+                <source
+                  src={audioSrc}
+                  type={(String(message.mediaType || '').split(';')[0].trim() || 'audio/ogg')}
+                />
+              </audio>
             ) : (
               <span className="text-xs text-gray-600">Voice message</span>
             )}

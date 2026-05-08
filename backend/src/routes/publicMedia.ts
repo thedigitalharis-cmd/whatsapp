@@ -40,7 +40,12 @@ router.get('/whatsapp/:mediaId', async (req, res) => {
       });
 
       const buf = Buffer.from(media.data as ArrayBuffer);
-      const ct = String(media.headers['content-type'] || 'audio/ogg').split(';')[0].trim() || 'audio/ogg';
+      const headerCt = String(media.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+      const metaCt = String(meta.data?.mime_type || '').split(';')[0].trim().toLowerCase();
+      const ct =
+        headerCt && headerCt !== 'application/octet-stream'
+          ? headerCt
+          : metaCt || 'audio/ogg';
       res.setHeader('Content-Type', ct);
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=86400');
