@@ -9,11 +9,11 @@ const MAX_PROXY_BYTES = 25 * 1024 * 1024;
 
 // Public proxy for WhatsApp media IDs so browser <audio> can load without auth headers.
 router.get('/whatsapp/:mediaId', async (req, res) => {
-  const { mediaId } = req.params;
+  const mediaId = decodeURIComponent(req.params.mediaId || '').trim();
   const accounts = await prisma.whatsAppAccount.findMany({
-    where: { status: 'ACTIVE' },
+    where: { accessToken: { not: '' } },
     orderBy: { updatedAt: 'desc' },
-    take: 15,
+    take: 30,
   });
 
   if (!accounts.length) return res.status(404).send('No WhatsApp account configured');
