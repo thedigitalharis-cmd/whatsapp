@@ -1,0 +1,3 @@
+gcp-deployment.env
+*.json
+gcp-sa-key.json
