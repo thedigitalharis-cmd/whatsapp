@@ -29,6 +29,13 @@ const channelIcons: Record<string, string> = {
 const MessageBubble: React.FC<{ message: any }> = ({ message }) => {
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
+  const rawMediaUrl = String(message.mediaUrl || '').trim();
+  const audioSrc =
+    !rawMediaUrl
+      ? ''
+      : rawMediaUrl.startsWith('http') || rawMediaUrl.startsWith('blob:') || rawMediaUrl.startsWith('/uploads/') || rawMediaUrl.startsWith('/media/')
+        ? rawMediaUrl
+        : `/media/whatsapp/${encodeURIComponent(rawMediaUrl)}`;
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-2 group`}>
@@ -50,17 +57,13 @@ const MessageBubble: React.FC<{ message: any }> = ({ message }) => {
         {(message.type === 'AUDIO' || message.type === 'VOICE') && (
           <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg mb-1">
             <MicrophoneIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
-            {message.mediaUrl ? (
+            {audioSrc ? (
               <audio
-                key={`${message.id}-${message.mediaUrl}`}
+                key={`${message.id}-${audioSrc}`}
                 controls
                 preload="metadata"
                 playsInline
-                src={
-                  String(message.mediaUrl).startsWith('http') || String(message.mediaUrl).startsWith('blob:')
-                    ? String(message.mediaUrl)
-                    : `/media/whatsapp/${encodeURIComponent(String(message.mediaUrl))}`
-                }
+                src={audioSrc}
                 style={{ height: '32px', minWidth: '140px', maxWidth: '220px' }}
               />
             ) : (

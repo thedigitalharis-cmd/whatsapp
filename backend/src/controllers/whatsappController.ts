@@ -449,7 +449,8 @@ export const handleWebhook = async (req: Request, res: Response) => {
                 break;
               case 'voice':
                 msgData.type = 'VOICE';
-                msgData.mediaUrl = msg.audio?.id;
+                msgData.mediaUrl = msg.voice?.id || msg.audio?.id;
+                msgData.mediaType = msg.voice?.mime_type || msg.audio?.mime_type;
                 break;
               case 'video':
                 msgData.type = 'VIDEO';
