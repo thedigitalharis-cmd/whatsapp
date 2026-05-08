@@ -47,10 +47,25 @@ const MessageBubble: React.FC<{ message: any }> = ({ message }) => {
             <span className="text-xs text-gray-700 truncate">{message.caption || 'Document'}</span>
           </div>
         )}
-        {message.type === 'AUDIO' && (
+        {(message.type === 'AUDIO' || message.type === 'VOICE') && (
           <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg mb-1">
-            <MicrophoneIcon className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-600">Voice message</span>
+            <MicrophoneIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            {message.mediaUrl ? (
+              <audio
+                key={`${message.id}-${message.mediaUrl}`}
+                controls
+                preload="metadata"
+                playsInline
+                src={
+                  String(message.mediaUrl).startsWith('http') || String(message.mediaUrl).startsWith('blob:')
+                    ? String(message.mediaUrl)
+                    : `/media/whatsapp/${encodeURIComponent(String(message.mediaUrl))}`
+                }
+                style={{ height: '32px', minWidth: '140px', maxWidth: '220px' }}
+              />
+            ) : (
+              <span className="text-xs text-gray-600">Voice message</span>
+            )}
           </div>
         )}
         {message.type === 'LOCATION' && message.location && (
