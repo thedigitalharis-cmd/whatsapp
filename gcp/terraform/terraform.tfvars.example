@@ -1,5 +1,0 @@
-project_id   = "your-gcp-project-id"
-region       = "us-central1"
-machine_type = "e2-small"
-disk_size_gb = 50
-environment  = "production"
