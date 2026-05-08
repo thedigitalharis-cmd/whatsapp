@@ -1,9 +1,84 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import axios from 'axios';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import * as wa from '../services/whatsappService';
+
+/** Download inbound customer voice to /uploads when possible; fallback to raw media ID proxy. */
+async function downloadInboundCustomerAudio(
+  msgAudio: { id?: string; url?: string; mime_type?: string },
+  accessToken: string
+): Promise<{ mediaUrl: string | null; mediaType: string }> {
+  const mimeType = (msgAudio.mime_type || 'audio/ogg').split(';')[0].trim() || 'audio/ogg';
+  let buf: Buffer | null = null;
+
+  const directUrl = typeof msgAudio.url === 'string' ? msgAudio.url.trim() : '';
+  if (directUrl.startsWith('http')) {
+    try {
+      const r = await axios.get(directUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        responseType: 'arraybuffer',
+        maxRedirects: 5,
+        timeout: 60000,
+      });
+      const b = Buffer.from(r.data as ArrayBuffer);
+      if (b.length >= 64) buf = b;
+    } catch (e: any) {
+      logger.warn(`Inbound audio direct URL failed: ${e.message}`);
+    }
+  }
+
+  const waVer = process.env.WHATSAPP_API_VERSION || 'v19.0';
+  if ((!buf || buf.length < 64) && msgAudio.id) {
+    try {
+      const mediaInfo = await axios.get(`https://graph.facebook.com/${waVer}/${msgAudio.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 30000,
+      });
+      const mediaDownloadUrl = mediaInfo.data?.url as string | undefined;
+      if (!mediaDownloadUrl) throw new Error('No media URL from Graph');
+      const audioResp = await axios.get(mediaDownloadUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        responseType: 'arraybuffer',
+        timeout: 60000,
+      });
+      const b = Buffer.from(audioResp.data as ArrayBuffer);
+      if (b.length >= 64) buf = b;
+    } catch (e: any) {
+      logger.warn(`Inbound audio Graph path failed: ${e.message}`);
+    }
+  }
+
+  if (!buf || buf.length < 64) {
+    if (msgAudio.id) return { mediaUrl: String(msgAudio.id), mediaType: mimeType };
+    return { mediaUrl: null, mediaType: mimeType };
+  }
+
+  try {
+    const pathMod = require('path');
+    const fsMod = require('fs');
+    const uploadDir = pathMod.join(process.cwd(), 'uploads');
+    if (!fsMod.existsSync(uploadDir)) fsMod.mkdirSync(uploadDir, { recursive: true });
+
+    const ext =
+      mimeType.includes('mpeg') || mimeType.includes('mp3')
+        ? '.mp3'
+        : mimeType.includes('mp4') || mimeType.includes('aac')
+          ? '.m4a'
+          : mimeType.includes('webm')
+            ? '.webm'
+            : '.ogg';
+    const filename = `recv_${Date.now()}_${(msgAudio.id || 'audio').toString().slice(-8)}${ext}`;
+    fsMod.writeFileSync(pathMod.join(uploadDir, filename), buf);
+    return { mediaUrl: `/uploads/${filename}`, mediaType: msgAudio.mime_type || mimeType };
+  } catch (e: any) {
+    logger.error(`Inbound audio save failed: ${e.message}`);
+    if (msgAudio.id) return { mediaUrl: String(msgAudio.id), mediaType: mimeType };
+    return { mediaUrl: null, mediaType: mimeType };
+  }
+}
 
 // ─── Accounts ─────────────────────────────────────────────────────────────
 
@@ -444,13 +519,22 @@ export const handleWebhook = async (req: Request, res: Response) => {
                 break;
               case 'audio':
                 msgData.type = 'AUDIO';
-                msgData.mediaUrl = msg.audio?.id;
-                msgData.mediaType = msg.audio?.mime_type;
+                if (msg.audio?.id || msg.audio?.url) {
+                  const inbound = await downloadInboundCustomerAudio(msg.audio, account.accessToken);
+                  msgData.mediaUrl = inbound.mediaUrl;
+                  msgData.mediaType = inbound.mediaType;
+                }
                 break;
               case 'voice':
                 msgData.type = 'VOICE';
-                msgData.mediaUrl = msg.voice?.id || msg.audio?.id;
-                msgData.mediaType = msg.voice?.mime_type || msg.audio?.mime_type;
+                {
+                  const voicePayload = msg.voice || msg.audio;
+                  if (voicePayload?.id || voicePayload?.url) {
+                    const inbound = await downloadInboundCustomerAudio(voicePayload, account.accessToken);
+                    msgData.mediaUrl = inbound.mediaUrl;
+                    msgData.mediaType = inbound.mediaType;
+                  }
+                }
                 break;
               case 'video':
                 msgData.type = 'VIDEO';
