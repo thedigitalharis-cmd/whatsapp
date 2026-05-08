@@ -44,9 +44,7 @@ import auditRoutes from './routes/audit';
 import settingsRoutes from './routes/settings';
 import followUpsRoutes from './routes/followUps';
 import integrationsExtendedRoutes from './routes/integrations-extended';
-import publicMediaRoutes from './routes/publicMedia';
 import { startFollowUpScheduler } from './services/followUpService';
-import path from 'path';
 
 const app = express();
 const httpServer = createServer(app);
@@ -98,8 +96,6 @@ app.get('/health', (req, res) => {
 
 // WhatsApp webhook (public)
 app.use('/webhook', webhookRoutes);
-app.use('/media', publicMediaRoutes);
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Auth routes (public)
 app.use('/api/auth', authRoutes);
