@@ -30,12 +30,29 @@ const MessageBubble: React.FC<{ message: any }> = ({ message }) => {
   const isOut = message.direction === 'OUTBOUND';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const rawMediaUrl = String(message.mediaUrl || '').trim();
-  const audioSrc =
-    !rawMediaUrl
-      ? ''
-      : rawMediaUrl.startsWith('http') || rawMediaUrl.startsWith('blob:') || rawMediaUrl.startsWith('/uploads/') || rawMediaUrl.startsWith('/media/')
-        ? rawMediaUrl
-        : `/media/whatsapp/${encodeURIComponent(rawMediaUrl)}`;
+  let audioSrc = '';
+  if (rawMediaUrl) {
+    if (rawMediaUrl.startsWith('blob:')) {
+      audioSrc = rawMediaUrl;
+    } else if (rawMediaUrl.startsWith('/uploads/') || rawMediaUrl.startsWith('/media/')) {
+      audioSrc = rawMediaUrl;
+    } else if (rawMediaUrl.startsWith('http')) {
+      // If DB has wrong host/IP but path is our media route, force same-origin path.
+      try {
+        const u = new URL(rawMediaUrl);
+        if (u.pathname.startsWith('/uploads/') || u.pathname.startsWith('/media/')) {
+          audioSrc = `${u.pathname}${u.search}`;
+        } else {
+          audioSrc = rawMediaUrl;
+        }
+      } catch {
+        audioSrc = rawMediaUrl;
+      }
+    } else {
+      // Raw Meta media id.
+      audioSrc = `/media/whatsapp/${encodeURIComponent(rawMediaUrl)}`;
+    }
+  }
 
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-2 group`}>
